@@ -11,7 +11,7 @@
   "krav_metod": "fast",
   "avk_krav_fast": 0.08,
   "erp": 0.04,
-  "fcf_bas": "senaste",
+  "fcf_bas": "norm_capex",
   "fcf_premie": 0.02,
   "p_lag": 10,
   "p_hog": 90,
