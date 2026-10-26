@@ -24,13 +24,25 @@ CACHE_TIMMAR = 24
 
 
 # ================================================================ resurser
-@st.cache_resource
-def hamta_lagring():
+def hamta_lagring():  # inte cachad – nya Secrets ska slå igenom direkt
+    """Returnerar (lagring, varning). Varningen förklarar varför GitHub-sparning inte används."""
     try:
-        github = dict(st.secrets["github"])
+        alla = dict(st.secrets)
     except Exception:
-        github = None
-    return Lagring(github)
+        alla = {}
+    if not alla:
+        return Lagring(None), ("Inga Secrets hittades. Lägg in GitHub-uppgifterna under Settings → Secrets "
+                               "i Streamlit och spara.")
+    if "github" not in alla:
+        hittade = ", ".join(alla.keys())
+        return Lagring(None), (f"Secrets finns ({hittade}) men raden [github] saknas. "
+                               "Första raden i Secrets ska vara exakt [github].")
+    github = dict(alla["github"])
+    saknas = [k for k in ("token", "repo") if not str(github.get(k, "")).strip()]
+    if saknas:
+        return Lagring(None), (f"Under [github] saknas: {', '.join(saknas)}. "
+                               "Kontrollera stavningen och att värdena står inom citattecken.")
+    return Lagring(github), None
 
 
 @st.cache_data(ttl=CACHE_TIMMAR * 3600, show_spinner=False)
@@ -40,7 +52,7 @@ def hamta_cachad(symbol, typ, hist_ar, dra_sbc):
     return data
 
 
-lagring = hamta_lagring()
+lagring, lagring_varning = hamta_lagring()
 if "portfolj" not in st.session_state:
     try:
         st.session_state.portfolj, st.session_state.ar_exempel = lagring.las_portfolj()
@@ -199,6 +211,8 @@ with flikar[1]:
         except Exception as e:
             st.error(f"Kunde inte spara: {e}")
     s2.caption(f"Sparas: {lagring.beskrivning}")
+    if lagring_varning:
+        st.warning("⚠️ Innehaven sparas bara tillfälligt och försvinner när appen startas om. " + lagring_varning)
 
 # ================================================================ Detaljer
 with flikar[2]:

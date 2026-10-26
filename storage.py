@@ -40,7 +40,7 @@ class Lagring:
     def beskrivning(self):
         if self.gh:
             return f"GitHub: {self.gh['repo']} (gren '{self.gh['branch']}')"
-        return "Lokalt på den här datorn (mappen sparat/)"
+        return "Lokalt på servern där appen körs (mappen sparat/)"
 
     # ---------------------------------------------------------- GitHub
     def _sakerstall_gren(self):
