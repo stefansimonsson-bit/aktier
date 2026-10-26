@@ -17,7 +17,7 @@
   "p_hog": 90,
   "dcf_marginal": 0.3,
   "dcf_ar": 10,
-  "tillv_term": 0.03,
+  "tillv_term": 0.05,
   "w_fcf": 0.0,
   "w_pe": 1.0,
   "w_dcf": 1.0,
