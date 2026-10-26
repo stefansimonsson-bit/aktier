@@ -19,7 +19,7 @@
   "dcf_ar": 10,
   "tillv_term": 0.03,
   "w_fcf": 0.0,
-  "w_pe": 2.0,
+  "w_pe": 1.0,
   "w_dcf": 1.0,
   "rev_grans": -0.15,
   "nd_max": 3.0,
