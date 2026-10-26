@@ -2,8 +2,13 @@
 """Värderingslogik: strategier, delindex, sammanvägt index och signal per innehav."""
 
 # ---------------------------------------------------------------- strategier
-STRATEGI_NYCKLAR = ["erp", "fcf_premie", "p_lag", "p_hog", "dcf_marginal", "dcf_ar", "tillv_term",
-                    "w_fcf", "w_pe", "w_dcf", "rev_grans", "nd_max", "max_vikt"]
+STRATEGI_NYCKLAR = ["krav_metod", "avk_krav_fast", "erp", "fcf_bas", "fcf_premie", "p_lag", "p_hog",
+                    "dcf_marginal", "dcf_ar", "tillv_term", "w_fcf", "w_pe", "w_dcf", "rev_grans", "nd_max",
+                    "max_vikt"]
+FCF_BASER = {"senaste": "Senaste året", "snitt3": "Snitt 3 år", "norm_capex": "Normaliserad capex"}
+KRAV_METODER = {"fast": "Fast avkastningskrav", "premie": "Ränta + riskpremie"}
+# Hur många år prognosen hålls innan tillväxten börjar avta, beroende på källa
+HALL_AR = {"Analytiker, 5 år": 5, "Analytiker, 1–2 år": 2, "Historisk omsättning": 3, "Egen": 5}
 
 STRATEGIER = {
     "A": {
@@ -13,7 +18,7 @@ STRATEGIER = {
                         "analytikerna räknar med. FCF-måttet är avstängt eftersom det nästan alltid säger dyrt "
                         "om amerikansk tech när räntan är hög. Breda P/E-band och stor säkerhetsmarginal ger få "
                         "signaler. Passar en portfölj med kvalitetsbolag som Magnificent 7."),
-        "param": {"erp": 0.04, "fcf_premie": 0.02, "p_lag": 10, "p_hog": 90, "dcf_marginal": 0.30,
+        "param": {"krav_metod": "fast", "avk_krav_fast": 0.08, "erp": 0.04, "fcf_bas": "senaste", "fcf_premie": 0.02, "p_lag": 10, "p_hog": 90, "dcf_marginal": 0.30,
                   "dcf_ar": 10, "tillv_term": 0.03, "w_fcf": 0.0, "w_pe": 0.5, "w_dcf": 2.0,
                   "rev_grans": -0.15, "nd_max": 3.0, "max_vikt": 0.25},
     },
@@ -22,7 +27,7 @@ STRATEGIER = {
         "kort": "Mellanväg mellan tillväxt och värdedisciplin.",
         "beskrivning": ("Alla tre mått används, med störst vikt på DCF och minst på FCF-yield. "
                         "Måttligt med signaler. Ett rimligt standardval."),
-        "param": {"erp": 0.045, "fcf_premie": 0.03, "p_lag": 20, "p_hog": 80, "dcf_marginal": 0.20,
+        "param": {"krav_metod": "fast", "avk_krav_fast": 0.085, "erp": 0.045, "fcf_bas": "senaste", "fcf_premie": 0.03, "p_lag": 20, "p_hog": 80, "dcf_marginal": 0.20,
                   "dcf_ar": 10, "tillv_term": 0.025, "w_fcf": 0.5, "w_pe": 1.0, "w_dcf": 1.5,
                   "rev_grans": -0.10, "nd_max": 3.0, "max_vikt": 0.15},
     },
@@ -32,8 +37,8 @@ STRATEGIER = {
         "beskrivning": ("Störst vikt på P/E mot bolagets egen historik och snävare band, så att signalerna "
                         "kommer oftare. Fungerar bra i svängiga marknader, men kan sälja bolag som "
                         "förtjänar en högre värdering än förr."),
-        "param": {"erp": 0.05, "fcf_premie": 0.035, "p_lag": 25, "p_hog": 75, "dcf_marginal": 0.15,
-                  "dcf_ar": 7, "tillv_term": 0.025, "w_fcf": 1.0, "w_pe": 1.5, "w_dcf": 1.0,
+        "param": {"krav_metod": "fast", "avk_krav_fast": 0.09, "erp": 0.05, "fcf_bas": "snitt3", "fcf_premie": 0.035,
+                  "p_lag": 25, "p_hog": 75, "dcf_marginal": 0.15, "dcf_ar": 8, "tillv_term": 0.025, "w_fcf": 1.0, "w_pe": 1.5, "w_dcf": 1.0,
                   "rev_grans": -0.10, "nd_max": 2.5, "max_vikt": 0.15},
     },
     "D": {
@@ -41,7 +46,7 @@ STRATEGIER = {
         "kort": "Skydda kapitalet och minska koncentrationen.",
         "beskrivning": ("Högt avkastningskrav, känslig spärr och låg maxvikt per aktie. Säljer tidigt och "
                         "köper sällan. Passar om du främst vill minska risken i en koncentrerad portfölj."),
-        "param": {"erp": 0.055, "fcf_premie": 0.04, "p_lag": 20, "p_hog": 70, "dcf_marginal": 0.25,
+        "param": {"krav_metod": "fast", "avk_krav_fast": 0.095, "erp": 0.055, "fcf_bas": "snitt3", "fcf_premie": 0.04, "p_lag": 20, "p_hog": 70, "dcf_marginal": 0.25,
                   "dcf_ar": 7, "tillv_term": 0.02, "w_fcf": 1.0, "w_pe": 1.0, "w_dcf": 1.0,
                   "rev_grans": -0.05, "nd_max": 2.0, "max_vikt": 0.10},
     },
@@ -72,7 +77,14 @@ def tillampa_strategi(inst, kod):
 def matchar_strategi(inst):
     """Returnerar strategikoden om parametrarna exakt motsvarar en strategi, annars 'Egen'."""
     for kod, s in STRATEGIER.items():
-        if all(abs(float(inst.get(k, 0)) - float(v)) < 1e-9 for k, v in s["param"].items()):
+        def lika(a, b):
+            if isinstance(b, str):
+                return a == b
+            try:
+                return abs(float(a) - float(b)) < 1e-9
+            except (TypeError, ValueError):
+                return False
+        if all(lika(inst.get(k), v) for k, v in s["param"].items()):
             return kod
     return "Egen"
 
@@ -90,30 +102,42 @@ def _tal(v):
         return None
 
 
-def dcf_varde(fcf, g0, r, n, gt):
-    """DCF där tillväxten börjar på g0 och avtar linjärt till gt under n år, därefter evig tillväxt gt."""
+def dcf_varde(fcf, g0, r, n, gt, hall=0):
+    """DCF där tillväxten g0 hålls i 'hall' år och sedan avtar linjärt till gt fram till år n,
+    därefter evig tillväxt gt."""
+    n = max(int(n), int(hall) + 1)
     pv, cf = 0.0, fcf
     for t in range(1, n + 1):
-        g = g0 + (gt - g0) * (t - 1) / (n - 1) if n > 1 else g0
+        if t <= hall:
+            g = g0
+        else:
+            steg = n - hall
+            g = g0 + (gt - g0) * (t - hall) / steg if steg > 0 else gt
         cf *= 1 + g
         pv += cf / (1 + r) ** t
     return pv + cf * (1 + gt) / (r - gt) / (1 + r) ** n
 
 
-def implicit_tillvaxt(borsvarde, fcf, r, n, gt):
-    """Den starttillväxt som gör DCF-värdet lika med börsvärdet (dagens pris)."""
+def implicit_tillvaxt(borsvarde, fcf, r, n, gt, hall=0):
+    """Den tillväxt (med samma bana som prognosen) som gör DCF-värdet lika med dagens börsvärde."""
     if not borsvarde or not fcf or fcf <= 0 or r is None or r <= gt + 0.005:
         return None
     lag, hog = -0.5, 2.0
-    if dcf_varde(fcf, lag, r, n, gt) > borsvarde or dcf_varde(fcf, hog, r, n, gt) < borsvarde:
+    if dcf_varde(fcf, lag, r, n, gt, hall) > borsvarde or dcf_varde(fcf, hog, r, n, gt, hall) < borsvarde:
         return None
     for _ in range(80):
         mitt = (lag + hog) / 2
-        if dcf_varde(fcf, mitt, r, n, gt) < borsvarde:
+        if dcf_varde(fcf, mitt, r, n, gt, hall) < borsvarde:
             lag = mitt
         else:
             hog = mitt
     return (lag + hog) / 2
+
+
+def avkastningskrav(inst, rf):
+    if inst.get("krav_metod", "fast") == "fast":
+        return inst["avk_krav_fast"]
+    return rf + inst["erp"]
 
 
 # ---------------------------------------------------------------- värdering per innehav
@@ -122,7 +146,7 @@ def vardera(innehav, data, inst):
     typ = innehav.get("typ") or data.get("typ") or "Aktie"
     valuta = data.get("valuta")
     rf = inst["rantor"].get((valuta or "").upper(), inst["rf_standard"])
-    r = rf + inst["erp"]
+    r = avkastningskrav(inst, rf)
     egen_g = _tal(innehav.get("tillvaxt"))
     g = egen_g if egen_g is not None else data.get("g_ref")
     g_kalla = "Egen" if egen_g is not None else data.get("g_kalla")
@@ -147,7 +171,14 @@ def vardera(innehav, data, inst):
     if typ in ("ETF", "Fond"):
         return res
 
-    mcap, fcf = data.get("borsvarde_mn"), data.get("fcf_mn")
+    mcap = data.get("borsvarde_mn")
+    bas = inst.get("fcf_bas", "senaste")
+    fcf = data.get(f"fcf_{bas}_mn")
+    if fcf is None:  # reserv om vald bas saknas
+        fcf = data.get("fcf_senaste_mn") if data.get("fcf_senaste_mn") is not None else data.get("fcf_mn")
+    res["fcf_mn"], res["fcf_bas"] = fcf, bas
+    hall = HALL_AR.get(g_kalla, 3)
+    res["hall_ar"] = hall
     pe_nu, pe_med, pe_pct = data.get("pe_nu"), data.get("pe_median"), data.get("pe_pct")
 
     # Delindex (100 = rimligt värderad)
@@ -159,9 +190,9 @@ def vardera(innehav, data, inst):
     if pe_nu is not None and pe_med:
         res["index_pe"] = _klamp(pe_nu / pe_med * 100)
     if g is not None and fcf and fcf > 0 and mcap and r > inst["tillv_term"] + 0.005:
-        res["index_dcf"] = _klamp(mcap / dcf_varde(fcf, g, r, int(inst["dcf_ar"]), inst["tillv_term"]) * 100)
+        res["index_dcf"] = _klamp(mcap / dcf_varde(fcf, g, r, int(inst["dcf_ar"]), inst["tillv_term"], hall) * 100)
     if mcap and fcf:
-        res["implicit_tillvaxt"] = implicit_tillvaxt(mcap, fcf, r, int(inst["dcf_ar"]), inst["tillv_term"])
+        res["implicit_tillvaxt"] = implicit_tillvaxt(mcap, fcf, r, int(inst["dcf_ar"]), inst["tillv_term"], hall)
 
     # Billigt / dyrt per mått (None = data saknas)
     marg = inst["dcf_marginal"] * 100

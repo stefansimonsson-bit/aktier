@@ -122,7 +122,7 @@ class Lagring:
         df["ticker"] = df["ticker"].astype(str).str.strip().str.upper()
         self._spara(PORTFOLJ_FIL, df.to_csv(index=False), "Uppdatera innehav")
 
-    def las_installningar(self, standard, strategi_nycklar=()):
+    def las_installningar(self, standard, strategi_nycklar=(), strategier=None):
         text = self._las(INSTALLNINGAR_FIL)
         inst = json.loads(json.dumps(standard))  # djupkopia
         if text:
@@ -131,6 +131,12 @@ class Lagring:
                 # Sparat av en äldre version utan strategier – använd standardstrategin
                 sparade = {k: v for k, v in sparade.items() if k not in strategi_nycklar}
             inst.update({k: v for k, v in sparade.items() if k in standard})
+            # Parametrar som tillkommit efter att strategin sparades hämtas från strategin
+            vald = (strategier or {}).get(sparade.get("strategi"))
+            if vald:
+                for k in strategi_nycklar:
+                    if k not in sparade:
+                        inst[k] = vald["param"][k]
         return inst
 
     def spara_installningar(self, inst):

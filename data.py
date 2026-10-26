@@ -240,26 +240,38 @@ def hamta(symbol, typ=None, hist_ar=5, dra_sbc=True):
         noter.append(f"Växelkurs {fin_valuta}/{valuta} saknas, räknar 1:1")
         fx_fin = 1.0
 
-    # Fritt kassaflöde
+    # Fritt kassaflöde – tre varianter: snitt 3 år, senaste året och normaliserad capex
     cf = _sakert(lambda: t.cashflow)
+    ocf = _rad(cf, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"])
     fcf = _rad(cf, ["Free Cash Flow"])
     if fcf is None:
-        ocf = _rad(cf, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"])
         capex = _rad(cf, ["Capital Expenditure"])
         if ocf is not None and capex is not None:
             fcf = (ocf + capex).dropna().sort_index(ascending=False)
     sbc = _rad(cf, ["Stock Based Compensation"]) if dra_sbc else None
-    fcf_snitt, fcf_ar = None, []
+    avskr = _rad(cf, ["Depreciation And Amortization", "Depreciation Amortization Depletion",
+                      "Depreciation"])
+    fcf_snitt = fcf_senaste = fcf_norm = None
+    fcf_ar = []
     if fcf is not None and not fcf.empty:
         justerad_fcf = fcf - sbc.reindex(fcf.index).fillna(0) if sbc is not None else fcf
         justerad_fcf = justerad_fcf * fx_fin
         senaste = justerad_fcf.iloc[:3]
         fcf_snitt = float(senaste.mean())
+        fcf_senaste = float(justerad_fcf.iloc[0])
         if len(senaste) < 3:
             noter.append(f"FCF-snitt bygger på {len(senaste)} år")
         fcf_ar = [(d.strftime("%Y"), float(v) / 1e6) for d, v in justerad_fcf.sort_index().items()]
     else:
         noter.append("FCF saknas")
+    if ocf is not None and avskr is not None:
+        # Normaliserad capex: investeringar = avskrivningar, dvs. bara underhåll – tillväxtinvesteringar räknas bort
+        d0 = ocf.index[0]
+        if d0 in avskr.index:
+            norm = ocf.loc[d0] - abs(avskr.loc[d0])
+            if sbc is not None and d0 in sbc.index:
+                norm -= sbc.loc[d0]
+            fcf_norm = float(norm) * fx_fin
 
     # Vinster och antal aktier
     inc = _sakert(lambda: t.income_stmt)
@@ -317,6 +329,9 @@ def hamta(symbol, typ=None, hist_ar=5, dra_sbc=True):
     ut.update({
         "borsvarde_mn": borsvarde / 1e6 if borsvarde else None,
         "fcf_mn": fcf_snitt / 1e6 if fcf_snitt is not None else None,
+        "fcf_snitt3_mn": fcf_snitt / 1e6 if fcf_snitt is not None else None,
+        "fcf_senaste_mn": fcf_senaste / 1e6 if fcf_senaste is not None else None,
+        "fcf_norm_capex_mn": fcf_norm / 1e6 if fcf_norm is not None else None,
         "fcf_ar": fcf_ar,
         "pe_nu": pe["pe_nu"], "pe_median": pe["pe_median"], "pe_pct": pe["pe_pct"],
         "hist_ar": pe["hist_ar"], "pe_serie": pe["pe_serie"],

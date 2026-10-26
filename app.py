@@ -9,8 +9,8 @@ import streamlit as st
 import avanza
 from data import hamta, sok_ticker
 from storage import KOLUMNER, Lagring
-from valuation import (INDEX_MAX, INDEX_MIN, STANDARD_INSTALLNINGAR, STRATEGI_NYCKLAR, STRATEGIER,
-                       matchar_strategi, tillampa_strategi, vardera_portfolj)
+from valuation import (FCF_BASER, INDEX_MAX, INDEX_MIN, KRAV_METODER, STANDARD_INSTALLNINGAR,
+                       STRATEGI_NYCKLAR, STRATEGIER, matchar_strategi, tillampa_strategi, vardera_portfolj)
 
 st.set_page_config(page_title="Portföljvärdering", page_icon="📊", layout="wide")
 
@@ -64,7 +64,7 @@ lagring, lagring_varning = hamta_lagring()
 if "portfolj" not in st.session_state:
     try:
         st.session_state.portfolj, st.session_state.ar_exempel = lagring.las_portfolj()
-        st.session_state.inst = lagring.las_installningar(STANDARD_INSTALLNINGAR, STRATEGI_NYCKLAR)
+        st.session_state.inst = lagring.las_installningar(STANDARD_INSTALLNINGAR, STRATEGI_NYCKLAR, STRATEGIER)
     except Exception as e:
         st.error(f"Kunde inte läsa sparade uppgifter ({lagring.beskrivning}): {e}")
         st.stop()
@@ -283,9 +283,12 @@ def sida_detaljer():
 
     rf = r["riskfri"]
     rader = [
-        f"**Tillväxt:** dagens pris förutsätter **{fmt(r['implicit_tillvaxt'], '{:.1%}')}** tillväxt i fritt kassaflöde "
-        f"första året (avtagande mot {inst['tillv_term']:.1%} på {int(inst['dcf_ar'])} år). Förväntat: "
-        f"**{fmt(r['forvantad_tillvaxt'], '{:.1%}')}** ({r['g_kalla'] or 'saknas'}) → {status('DCF')}",
+        f"**Tillväxt:** dagens pris förutsätter **{fmt(r['implicit_tillvaxt'], '{:.1%}')}** årlig tillväxt i fritt "
+        f"kassaflöde. Förväntat: **{fmt(r['forvantad_tillvaxt'], '{:.1%}')}** ({r['g_kalla'] or 'saknas'}) → {status('DCF')}",
+        f"**DCF-antaganden:** tillväxten hålls i {fmt(r.get('hall_ar'), '{:.0f}')} år och avtar sedan till "
+        f"{inst['tillv_term']:.1%} år {max(int(inst['dcf_ar']), int(r.get('hall_ar') or 0) + 1)}. Avkastningskrav "
+        f"{r['avk_krav']:.1%}. FCF-bas: {FCF_BASER.get(r.get('fcf_bas'), '–')} = "
+        f"{fmt(r['fcf_mn'], '{:,.0f}')} mn {r['valuta'] or ''}",
         f"**FCF-yield** {fmt(r['fcf_yield'], '{:.1%}')} mot ränta {rf:.1%} och rimlig nivå "
         f"{rf + inst['fcf_premie']:.1%} → {status('FCF')}",
         f"**P/E** {fmt(r['pe_nu'], '{:.1f}')} mot median {fmt(r['pe_median'], '{:.1f}')} "
@@ -480,8 +483,18 @@ def sida_installningar():
 
         st.markdown("##### Strategiparametrar")
         a, b, c = st.columns(3)
-        ny["erp"] = a.number_input("Aktieriskpremie %", value=inst["erp"] * 100, step=0.5,
-                                   help="Avkastningskrav = ränta + aktieriskpremie") / 100
+        metoder = list(KRAV_METODER)
+        ny["krav_metod"] = a.selectbox("Avkastningskrav", metoder, index=metoder.index(inst.get("krav_metod", "fast")),
+                                       format_func=KRAV_METODER.get,
+                                       help="Fast: samma krav oavsett ränteläge. Ränta + riskpremie: följer räntan.")
+        ny["avk_krav_fast"] = b.number_input("Fast avkastningskrav %", value=inst["avk_krav_fast"] * 100,
+                                             step=0.5) / 100
+        ny["erp"] = c.number_input("Aktieriskpremie % (vid ränta + premie)", value=inst["erp"] * 100, step=0.5) / 100
+        baser = list(FCF_BASER)
+        ny["fcf_bas"] = a.selectbox("FCF-bas", baser, index=baser.index(inst.get("fcf_bas", "senaste")),
+                                    format_func=FCF_BASER.get,
+                                    help="Senaste året passar växande bolag. Snitt 3 år jämnar ut svängningar. "
+                                         "Normaliserad capex räknar bort tillväxtinvesteringar (generöst).")
         ny["fcf_premie"] = b.number_input("FCF-premie över räntan %", value=inst["fcf_premie"] * 100, step=0.5) / 100
         ny["max_vikt"] = c.number_input("Maxvikt per aktie % (0 = av)", value=inst["max_vikt"] * 100, step=1.0,
                                         min_value=0.0) / 100
@@ -511,14 +524,18 @@ def sida_installningar():
                 st.rerun()
 
     st.markdown("##### Jämför strategierna")
-    etiketter = {"erp": ("Aktieriskpremie", "{:.1%}"), "fcf_premie": ("FCF-premie", "{:.1%}"),
+    etiketter = {"krav_metod": ("Avkastningskrav, metod", KRAV_METODER),
+                 "avk_krav_fast": ("Fast avkastningskrav", "{:.1%}"),
+                 "erp": ("Aktieriskpremie (vid ränta + premie)", "{:.1%}"),
+                 "fcf_bas": ("FCF-bas", FCF_BASER), "fcf_premie": ("FCF-premie", "{:.1%}"),
                  "p_lag": ("P/E-percentil billig", "{:.0f}"), "p_hog": ("P/E-percentil dyr", "{:.0f}"),
                  "dcf_marginal": ("DCF-marginal", "{:.0%}"), "dcf_ar": ("År innan tillväxten planat ut", "{:.0f}"),
                  "tillv_term": ("Långsiktig tillväxt", "{:.1%}"), "w_fcf": ("Vikt FCF", "{:.1f}"),
                  "w_pe": ("Vikt P/E", "{:.1f}"), "w_dcf": ("Vikt DCF", "{:.1f}"),
                  "rev_grans": ("Spärr vinstrevidering", "{:.0%}"), "nd_max": ("Spärr nettoskuld/EBITDA", "{:.1f}"),
                  "max_vikt": ("Maxvikt per aktie", "{:.0%}")}
-    jmf = pd.DataFrame({s["namn"]: {etiketter[k][0]: etiketter[k][1].format(v) for k, v in s["param"].items()}
+    visa = lambda k, v: etiketter[k][1].get(v, v) if isinstance(etiketter[k][1], dict) else etiketter[k][1].format(v)
+    jmf = pd.DataFrame({s["namn"]: {etiketter[k][0]: visa(k, v) for k, v in s["param"].items()}
                         for s in STRATEGIER.values()})
     st.dataframe(jmf, width="stretch")
 
@@ -528,10 +545,13 @@ def sida_om():
     st.markdown(f"""
 **Tre mått** bedöms som billigt, neutralt eller dyrt för varje aktie:
 
-1. **DCF – prisets tillväxt mot förväntad tillväxt.** Appen räknar ut vilken tillväxt i fritt kassaflöde som
-   dagens kurs förutsätter (tillväxten antas avta jämnt till {inst['tillv_term']:.1%} på {int(inst['dcf_ar'])} år,
-   diskonterat med ränta + {inst['erp']:.1%}). Den jämförs med analytikernas förväntade tillväxt – i första hand
+1. **DCF – prisets tillväxt mot förväntad tillväxt.** Appen räknar ut vilken årlig tillväxt i fritt kassaflöde
+   som dagens kurs förutsätter, och jämför den med analytikernas förväntade tillväxt – i första hand
    femårsprognosen, annars prognosen för i år och nästa år, och sist bolagets historiska omsättningstillväxt.
+   Tillväxten hålls lika länge som prognosen gäller (5 år för femårsprognosen, 2 år för kortare prognoser,
+   3 år för historik) och avtar sedan jämnt till {inst['tillv_term']:.1%} år {int(inst['dcf_ar'])}.
+   Avkastningskrav: {('fast ' + format(inst['avk_krav_fast'], '.1%')) if inst.get('krav_metod', 'fast') == 'fast' else ('ränta + ' + format(inst['erp'], '.1%'))}.
+   FCF-bas: {FCF_BASER.get(inst.get('fcf_bas'), '')}.
    Billigt om priset ligger minst {inst['dcf_marginal']:.0%} under värdet med den förväntade tillväxten.
 2. **FCF-yield mot räntan.** Snitt av fritt kassaflöde de senaste tre åren delat med börsvärdet. Billigt över
    räntan + {inst['fcf_premie']:.1%}, dyrt under räntan.
