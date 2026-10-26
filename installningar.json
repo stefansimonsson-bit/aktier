@@ -1,5 +1,5 @@
 {
-  "strategi": "C",
+  "strategi": "D",
   "rantor": {
     "SEK": 0.033,
     "USD": 0.051
@@ -9,22 +9,22 @@
   "hist_ar": 5,
   "dra_sbc": true,
   "krav_metod": "fast",
-  "avk_krav_fast": 0.09,
-  "erp": 0.05,
+  "avk_krav_fast": 0.095,
+  "erp": 0.055,
   "fcf_bas": "snitt3",
-  "fcf_premie": 0.035,
-  "p_lag": 25,
-  "p_hog": 75,
-  "dcf_marginal": 0.15,
-  "tillv_term": 0.025,
-  "halvering_ar": 3,
+  "fcf_premie": 0.04,
+  "p_lag": 20,
+  "p_hog": 70,
+  "dcf_marginal": 0.25,
+  "tillv_term": 0.02,
+  "halvering_ar": 2,
   "kvalitet_pa": false,
-  "halvering_kval": 4,
+  "halvering_kval": 3,
   "kval_marginal": 0.2,
   "w_fcf": 1.0,
-  "w_pe": 1.5,
+  "w_pe": 1.0,
   "w_dcf": 1.0,
-  "rev_grans": -0.1,
-  "nd_max": 2.5,
-  "max_vikt": 0.15
+  "rev_grans": -0.05,
+  "nd_max": 2.0,
+  "max_vikt": 0.1
 }
