@@ -222,15 +222,17 @@ def sida_oversikt():
             lambda v: None if v is None or pd.isna(v) else (">30" if v > 30 else f"{v:.1f}")))
         t = aktier[["ticker", "namn", "signal", "index", "orsak", "varde_sek", "vikt", "implicit_tillvaxt",
                     "forvantad_tillvaxt", "kraver_ar", "g_kalla", "riktkurs_uppsida", "fcf_yield", "pe_nu", "pe_pct",
-                    "notering"]].rename(columns={
+                    "valuta", "kurs", "kurs_sek", "notering"]].rename(columns={
             "ticker": "Ticker", "namn": "Namn", "signal": "Signal", "index": "Index", "orsak": "Orsak",
             "varde_sek": "Värde (SEK)", "vikt": "Vikt", "implicit_tillvaxt": "Prisets tillväxt",
             "forvantad_tillvaxt": "Förväntad tillväxt", "kraver_ar": "Priset kräver (år)", "g_kalla": "Källa", "riktkurs_uppsida": "Till riktkurs",
-            "fcf_yield": "FCF-yield", "pe_nu": "P/E", "pe_pct": "P/E-percentil", "notering": "Notering"})
+            "fcf_yield": "FCF-yield", "pe_nu": "P/E", "pe_pct": "P/E-percentil", "valuta": "Valuta",
+            "kurs": "Kurs", "kurs_sek": "Kurs (SEK)", "notering": "Notering"})
         st.dataframe(t.style.map(signalstil, subset=["Signal"]).map(indexfarg, subset=["Index"])
                      .format({"Index": "{:.0f}", "Värde (SEK)": "{:,.0f}", "Vikt": pct, "Prisets tillväxt": pct,
                               "Förväntad tillväxt": pct, "Till riktkurs": "{:+.0%}", "FCF-yield": pct,
-                              "P/E": "{:.1f}", "P/E-percentil": "{:.0f}"}, na_rep="–"),
+                              "P/E": "{:.1f}", "P/E-percentil": "{:.0f}", "Kurs": "{:,.2f}",
+                              "Kurs (SEK)": "{:,.2f}"}, na_rep="–"),
                      hide_index=True, width="stretch")
         st.caption("Index: 100 = rimligt värderad, under 100 = undervärderad, över 100 = övervärderad. "
                    "**Prisets tillväxt** är den tillväxt i fritt kassaflöde som dagens kurs förutsätter. "
@@ -246,14 +248,15 @@ def sida_oversikt():
             st.caption(f"Inga {kat.lower()}.")
             continue
         df = df.assign(avvikelse=df["vikt"] - df["malvikt"])
-        t = df[["ticker", "namn", "signal", "orsak", "varde_sek", "vikt", "malvikt", "avvikelse", "kurs_sek",
-                "notering"]].rename(columns={
+        t = df[["ticker", "namn", "signal", "orsak", "varde_sek", "vikt", "malvikt", "avvikelse", "valuta", "kurs",
+                "kurs_sek", "notering"]].rename(columns={
             "ticker": "Ticker", "namn": "Namn", "signal": "Signal", "orsak": "Orsak", "varde_sek": "Värde (SEK)",
-            "vikt": "Vikt", "malvikt": "Målvikt", "avvikelse": "Avvikelse", "kurs_sek": "Kurs (SEK)",
+            "vikt": "Vikt", "malvikt": "Målvikt", "avvikelse": "Avvikelse", "valuta": "Valuta", "kurs": "Kurs",
+            "kurs_sek": "Kurs (SEK)",
             "notering": "Notering"})
         st.dataframe(t.style.map(signalstil, subset=["Signal"])
                      .format({"Värde (SEK)": "{:,.0f}", "Vikt": pct, "Målvikt": pct, "Avvikelse": "{:+.1%}",
-                              "Kurs (SEK)": "{:,.2f}"}, na_rep="–"),
+                              "Kurs": "{:,.2f}", "Kurs (SEK)": "{:,.2f}"}, na_rep="–"),
                      hide_index=True, width="stretch")
     st.caption("Fonder och ETF:er värderas inte – signalen bygger på avvikelse från målvikten "
                f"(±{inst['rebal_band']:.0%}). Ange målvikt under **Innehav**.")

@@ -54,14 +54,60 @@ def _normalisera_valuta(valuta, varde):
     return valuta, varde
 
 
-def valutakurs(fran, till="SEK"):
-    """Kurs för att räkna om 1 enhet 'fran' till 'till'. None om den inte går att hämta."""
-    if not fran or not till or fran == till:
-        return 1.0
-    h = _sakert(lambda: yf.Ticker(f"{fran}{till}=X").history(period="10d"))
+_fx_cache = {}
+FX_TTL = 3600
+
+# Handelsvaluta utifrån Yahoos tickerändelse – används bara när Yahoo inte anger valutan
+SUFFIX_VALUTA = {
+    ".ST": "SEK", ".OL": "NOK", ".CO": "DKK", ".HE": "EUR", ".IC": "ISK", ".DE": "EUR", ".F": "EUR",
+    ".PA": "EUR", ".AS": "EUR", ".BR": "EUR", ".MI": "EUR", ".MC": "EUR", ".LS": "EUR", ".VI": "EUR",
+    ".IR": "EUR", ".L": "GBp", ".SW": "CHF", ".TO": "CAD", ".V": "CAD", ".T": "JPY", ".HK": "HKD",
+    ".AX": "AUD",
+}
+
+
+def valuta_fran_ticker(symbol):
+    s = symbol.upper()
+    for suffix, valuta in SUFFIX_VALUTA.items():
+        if s.endswith(suffix):
+            return valuta
+    return "USD" if "." not in s and "=" not in s and not s.startswith("^") else None
+
+
+def _senaste_kurs(symbol):
+    t = yf.Ticker(symbol)
+    h = _sakert(lambda: t.history(period="10d"))
     if isinstance(h, pd.DataFrame) and not h.empty and "Close" in h:
-        return _tal(h["Close"].dropna().iloc[-1])
-    return None
+        v = _tal(h["Close"].dropna().iloc[-1])
+        if v:
+            return v
+    return _tal(_sakert(lambda: t.fast_info["last_price"]))
+
+
+def valutakurs(fran, till="SEK"):
+    """Kurs för att räkna om 1 enhet 'fran' till 'till'. None om den inte går att hämta –
+    då räknas inget värde ut hellre än ett felaktigt."""
+    if not fran or not till:
+        return None
+    if fran == till:
+        return 1.0
+    nyckel = (fran, till)
+    traff = _fx_cache.get(nyckel)
+    if traff and time.time() - traff[1] < FX_TTL:
+        return traff[0]
+    kurs = _senaste_kurs(f"{fran}{till}=X")
+    if not kurs:
+        omvand = _senaste_kurs(f"{till}{fran}=X")
+        kurs = 1 / omvand if omvand else None
+    if kurs and fran != "USD" and till != "USD" and not (0.0001 < kurs < 10000):
+        kurs = None
+    if not kurs and "USD" not in (fran, till):
+        # Via dollar, t.ex. NOK -> USD -> SEK
+        a, b = valutakurs(fran, "USD"), valutakurs("USD", till)
+        kurs = a * b if a and b else None
+    if kurs:
+        _fx_cache[nyckel] = (kurs, time.time())
+    return kurs
 
 
 # ---------------------------------------------------------------- P/E-historik
@@ -206,20 +252,28 @@ def hamta(symbol, typ=None, hist_ar=5, dra_sbc=True):
 
     kurs = (_tal(info.get("regularMarketPrice")) or _tal(info.get("currentPrice"))
             or _tal(info.get("navPrice")))
+    if kurs is None:
+        kurs = _tal(_sakert(lambda: t.fast_info["last_price"]))
     if kurs is None and manad_kurs is not None and not manad_kurs.empty:
         kurs = _tal(manad_kurs.iloc[-1])
     if kurs is None:
         return {"symbol": symbol, "typ": typ, "hamtad": hamtad, "ok": False,
                 "notering": "Hittades inte på Yahoo Finance. Svenska aktier slutar på .ST (t.ex. VOLV-B.ST)."}
 
-    ra_valuta = info.get("currency")
+    # Valuta: i första hand från Yahoo, annars från tickerns ändelse. Gissas aldrig till SEK.
+    ra_valuta = (info.get("currency") or _sakert(lambda: t.fast_info["currency"])
+                 or _sakert(lambda: t.history_metadata.get("currency")))
+    if not ra_valuta:
+        ra_valuta = valuta_fran_ticker(symbol)
+        if ra_valuta:
+            noter.append(f"Valuta antagen från tickern ({ra_valuta})")
     kurs_ra = kurs
     valuta, kurs = _normalisera_valuta(ra_valuta, kurs)
     if manad_kurs is not None and ra_valuta in ("GBp", "ZAc"):
         manad_kurs = manad_kurs / 100
     fx_sek = valutakurs(valuta, "SEK")
     if fx_sek is None:
-        noter.append(f"Växelkurs {valuta}/SEK saknas")
+        noter.append(f"Växelkurs {valuta or 'okänd valuta'}/SEK saknas – värde räknas inte ut")
 
     ut = {
         "symbol": symbol, "typ": typ, "hamtad": hamtad, "ok": True,
@@ -235,7 +289,7 @@ def hamta(symbol, typ=None, hist_ar=5, dra_sbc=True):
     # ---------- aktier
     borsvarde = _tal(info.get("marketCap")) or _tal(_sakert(lambda: t.fast_info["market_cap"]))
     fin_valuta, _ = _normalisera_valuta(info.get("financialCurrency") or valuta, None)
-    fx_fin = valutakurs(fin_valuta, valuta)
+    fx_fin = valutakurs(fin_valuta, valuta) if fin_valuta and valuta else 1.0
     if fx_fin is None:
         noter.append(f"Växelkurs {fin_valuta}/{valuta} saknas, räknar 1:1")
         fx_fin = 1.0
