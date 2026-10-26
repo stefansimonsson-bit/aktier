@@ -108,6 +108,82 @@ def _pe_historik(manad_kurs, borsvarde, vinster, aktiefaktor, cyklisk, hist_ar, 
     return ut
 
 
+# ---------------------------------------------------------------- förväntad tillväxt
+G_MIN, G_MAX = -0.05, 0.30  # rimlighetsgränser för startårets tillväxt
+
+
+def _forvantad_tillvaxt(t, inc):
+    """Analytikernas förväntade årliga tillväxt. I första hand femårsprognosen, därefter snittet av
+    prognoserna för i år och nästa år, sist bolagets historiska omsättningstillväxt."""
+    g_5ar = g_kort = g_hist = None
+    ge = _sakert(lambda: t.growth_estimates)
+    if isinstance(ge, pd.DataFrame) and not ge.empty:
+        kol = "stockTrend" if "stockTrend" in ge.columns else ge.columns[0]
+        if "+5y" in ge.index:
+            g_5ar = _tal(ge.loc["+5y", kol])
+        kort = [_tal(ge.loc[p, kol]) for p in ("0y", "+1y") if p in ge.index]
+        kort = [k for k in kort if k is not None]
+        if kort:
+            g_kort = sum(kort) / len(kort)
+    if g_kort is None:
+        ee = _sakert(lambda: t.earnings_estimate)
+        if isinstance(ee, pd.DataFrame) and not ee.empty and "growth" in ee.columns:
+            kort = [_tal(ee.loc[p, "growth"]) for p in ("0y", "+1y") if p in ee.index]
+            kort = [k for k in kort if k is not None]
+            if kort:
+                g_kort = sum(kort) / len(kort)
+    oms = _rad(inc, ["Total Revenue", "Operating Revenue"])
+    if oms is not None and len(oms) >= 3 and oms.iloc[0] > 0 and oms.iloc[-1] > 0:
+        ar = (oms.index[0] - oms.index[-1]).days / 365.25
+        if ar > 1:
+            g_hist = (oms.iloc[0] / oms.iloc[-1]) ** (1 / ar) - 1
+
+    if g_5ar is not None:
+        g_ref, kalla = g_5ar, "Analytiker, 5 år"
+    elif g_kort is not None:
+        g_ref, kalla = g_kort, "Analytiker, 1–2 år"
+    elif g_hist is not None:
+        g_ref, kalla = g_hist, "Historisk omsättning"
+    else:
+        g_ref, kalla = None, None
+    if g_ref is not None:
+        g_ref = max(G_MIN, min(G_MAX, g_ref))
+    return {"g_ref": g_ref, "kalla": kalla, "g_5ar": g_5ar, "g_kort": g_kort, "g_hist": g_hist}
+
+
+# ---------------------------------------------------------------- tickersök
+def sok_ticker(isin=None, namn=None, kortnamn=None, typ=None):
+    """Föreslår en Yahoo-ticker. Returnerar (ticker, status)."""
+    onskad = {"Aktie": "EQUITY", "Cyklisk": "EQUITY", "ETF": "ETF", "Fond": "MUTUALFUND"}.get(typ)
+    for fraga in [q for q in (isin, namn) if q]:
+        res = _sakert(lambda: yf.Search(fraga, max_results=8, news_count=0).quotes, []) or []
+        kandidater = [q for q in res if q.get("symbol")]
+        if not kandidater:
+            continue
+        def poang(q):
+            p = 0
+            if onskad and q.get("quoteType") == onskad:
+                p += 2
+            if isin and isin.upper().startswith("SE") and q["symbol"].upper().endswith(".ST"):
+                p += 3
+            if isin and isin.upper().startswith("US") and "." not in q["symbol"]:
+                p += 3
+            if kortnamn:  # skiljer t.ex. VOLV-A och VOLV-B åt
+                rent = lambda x: "".join(ch for ch in str(x).upper() if ch.isalnum())
+                if rent(q["symbol"].split(".")[0]) == rent(kortnamn):
+                    p += 4
+            return p
+        basta = max(kandidater, key=poang)
+        return basta["symbol"].upper(), ("Hittad via ISIN" if fraga == isin else "Hittad via namn")
+    # Gissning från kortnamnet
+    if kortnamn:
+        k = str(kortnamn).strip().upper().replace(" ", "-")
+        if isin and isin.upper().startswith("SE"):
+            return f"{k}.ST", "Gissad"
+        return k, "Gissad"
+    return None, "Ej hittad"
+
+
 # ---------------------------------------------------------------- huvudfunktion
 def hamta(symbol, typ=None, hist_ar=5, dra_sbc=True):
     """Hämtar allt verktyget behöver för en ticker. Returnerar alltid en dict."""
@@ -137,6 +213,7 @@ def hamta(symbol, typ=None, hist_ar=5, dra_sbc=True):
                 "notering": "Hittades inte på Yahoo Finance. Svenska aktier slutar på .ST (t.ex. VOLV-B.ST)."}
 
     ra_valuta = info.get("currency")
+    kurs_ra = kurs
     valuta, kurs = _normalisera_valuta(ra_valuta, kurs)
     if manad_kurs is not None and ra_valuta in ("GBp", "ZAc"):
         manad_kurs = manad_kurs / 100
@@ -210,6 +287,18 @@ def hamta(symbol, typ=None, hist_ar=5, dra_sbc=True):
     elif pe["pe_median"] is None:
         noter.append("För kort P/E-historik")
 
+    # Förväntad tillväxt: analytikernas konsensus, med historisk omsättningstillväxt som reserv
+    tillv = _forvantad_tillvaxt(t, inc)
+
+    # Analytikernas riktkurs
+    riktkurs_uppsida, antal_analytiker = None, _tal(info.get("numberOfAnalystOpinions"))
+    pt = _sakert(lambda: t.analyst_price_targets, {}) or {}
+    snitt = _tal(pt.get("mean")) if isinstance(pt, dict) else None
+    if snitt is None:
+        snitt = _tal(info.get("targetMeanPrice"))
+    if snitt and kurs_ra:
+        riktkurs_uppsida = snitt / kurs_ra - 1
+
     # Spärr: vinstrevideringar och skuldsättning
     eps_rev = None
     trend = _sakert(lambda: t.eps_trend)
@@ -232,6 +321,9 @@ def hamta(symbol, typ=None, hist_ar=5, dra_sbc=True):
         "pe_nu": pe["pe_nu"], "pe_median": pe["pe_median"], "pe_pct": pe["pe_pct"],
         "hist_ar": pe["hist_ar"], "pe_serie": pe["pe_serie"],
         "eps_rev": eps_rev, "nd_ebitda": nd_ebitda,
+        "g_ref": tillv["g_ref"], "g_kalla": tillv["kalla"],
+        "g_analytiker_5ar": tillv["g_5ar"], "g_analytiker_kort": tillv["g_kort"], "g_historisk": tillv["g_hist"],
+        "riktkurs_uppsida": riktkurs_uppsida, "antal_analytiker": antal_analytiker,
         "notering": "; ".join(noter),
     })
     return ut

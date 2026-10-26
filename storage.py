@@ -13,16 +13,32 @@ import os
 import pandas as pd
 import requests
 
-KOLUMNER = ["ticker", "typ", "antal", "tillvaxt_pct", "malvikt_pct", "manuell_kurs_sek"]
+KOLUMNER = ["ticker", "namn", "typ", "antal", "tillvaxt_pct", "malvikt_pct", "manuell_kurs_sek", "isin"]
 PORTFOLJ_FIL = "portfolj.csv"
 INSTALLNINGAR_FIL = "installningar.json"
 LOKAL_MAPP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sparat")
 
 EXEMPEL = pd.DataFrame([
-    {"ticker": "MSFT", "typ": "Aktie", "antal": 10, "tillvaxt_pct": 10.0, "malvikt_pct": None, "manuell_kurs_sek": None},
-    {"ticker": "VOLV-B.ST", "typ": "Cyklisk", "antal": 100, "tillvaxt_pct": 4.0, "malvikt_pct": None, "manuell_kurs_sek": None},
-    {"ticker": "VWCE.DE", "typ": "ETF", "antal": 20, "tillvaxt_pct": None, "malvikt_pct": 30.0, "manuell_kurs_sek": None},
+    {"ticker": "MSFT", "typ": "Aktie", "antal": 10},
+    {"ticker": "VOLV-B.ST", "typ": "Cyklisk", "antal": 100},
+    {"ticker": "VWCE.DE", "typ": "ETF", "antal": 20, "malvikt_pct": 30.0},
 ], columns=KOLUMNER)
+
+
+TEXT = ["ticker", "namn", "typ", "isin"]
+TAL = ["antal", "tillvaxt_pct", "malvikt_pct", "manuell_kurs_sek"]
+
+
+def typa(df):
+    """Ger kolumnerna rätt datatyp så att tabellen går att redigera i appen."""
+    df = df.reindex(columns=KOLUMNER).copy()
+    for k in TEXT:
+        df[k] = df[k].astype(object).where(df[k].notna(), None)
+        df[k] = df[k].map(lambda v: None if v is None or str(v).strip() in ("", "nan", "None", "<NA>")
+                          else str(v).strip()).astype("string")
+    for k in TAL:
+        df[k] = pd.to_numeric(df[k], errors="coerce").astype(float)
+    return df.reset_index(drop=True)
 
 
 class Lagring:
@@ -97,24 +113,23 @@ class Lagring:
     def las_portfolj(self):
         text = self._las(PORTFOLJ_FIL)
         if not text:
-            return EXEMPEL.copy(), True
-        df = pd.read_csv(io.StringIO(text))
-        for k in KOLUMNER:
-            if k not in df:
-                df[k] = None
-        return df[KOLUMNER], False
+            return typa(EXEMPEL), True
+        return typa(pd.read_csv(io.StringIO(text), dtype={k: str for k in TEXT})), False
 
     def spara_portfolj(self, df):
-        df = df[KOLUMNER].copy()
+        df = df.reindex(columns=KOLUMNER).copy()
         df = df[df["ticker"].notna() & (df["ticker"].astype(str).str.strip() != "")]
         df["ticker"] = df["ticker"].astype(str).str.strip().str.upper()
         self._spara(PORTFOLJ_FIL, df.to_csv(index=False), "Uppdatera innehav")
 
-    def las_installningar(self, standard):
+    def las_installningar(self, standard, strategi_nycklar=()):
         text = self._las(INSTALLNINGAR_FIL)
         inst = json.loads(json.dumps(standard))  # djupkopia
         if text:
             sparade = json.loads(text)
+            if "strategi" not in sparade:
+                # Sparat av en äldre version utan strategier – använd standardstrategin
+                sparade = {k: v for k, v in sparade.items() if k not in strategi_nycklar}
             inst.update({k: v for k, v in sparade.items() if k in standard})
         return inst
 

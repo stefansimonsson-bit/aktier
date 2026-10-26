@@ -1,8 +1,15 @@
 # Portföljvärdering
 
-En webbapp som värderar dina innehav med tre mått – FCF-yield mot räntan, P/E mot egen historik och DCF med din
-tillväxtförväntan – och ger en färgkodad signal (Öka / Behåll / Minska / Granska) och ett index där 100 = rimligt
-värderad. ETF:er och fonder får en ombalanseringssignal mot målvikt. Data hämtas från Yahoo Finance och cachas i 24 timmar.
+En webbapp som värderar dina innehav och ger en färgkodad signal (Öka / Behåll / Minska / Granska) och ett
+index där 100 = rimligt värderad. Innehaven visas i tre listor – aktier, fonder och ETF:er – sorterade efter värde.
+
+- **Aktier** bedöms med tre mått: tillväxten som dagens pris förutsätter jämfört med analytikernas förväntade
+  tillväxt (DCF), FCF-yield mot räntan och P/E mot egen historik. Hur måtten vägs styrs av vald strategi (A–D),
+  som väljs i sidomenyn och sparas.
+- **Fonder och ETF:er** får en ombalanseringssignal mot målvikt.
+- **Avanza-import:** ladda upp Avanzas export av innehav, så föreslår appen Yahoo-tickers via ISIN.
+
+Data hämtas från Yahoo Finance och cachas i 24 timmar.
 
 ## Filer
 
@@ -10,8 +17,9 @@ värderad. ETF:er och fonder får en ombalanseringssignal mot målvikt. Data hä
 |---|---|
 | `app.py` | Själva appen (gränssnittet) |
 | `data.py` | Hämtar data från Yahoo Finance |
-| `valuation.py` | Värderingslogiken och standardinställningarna |
+| `valuation.py` | Värderingslogiken och strategierna A–D |
 | `storage.py` | Sparar innehav och inställningar (GitHub eller lokalt) |
+| `avanza.py` | Läser Avanzas export av innehav |
 | `requirements.txt` | Python-paket som behövs |
 | `.streamlit/config.toml` | Utseende (valfri) |
 | `.streamlit/secrets.toml.exempel` | Mall för GitHub-nyckeln (se steg 4) |
