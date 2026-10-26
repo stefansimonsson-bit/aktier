@@ -82,7 +82,12 @@ def spara_inst(ny):
 
 
 # ================================================================ sidomeny
-STRATEGIVAL = list(STRATEGIER) + (["Egen"] if inst.get("strategi") == "Egen" else [])
+STRATEGIVAL = list(STRATEGIER) + ["Egen"]  # samma val varje gång, annars tappar menyn sitt läge
+
+# Menyns värde följer alltid den sparade strategin. Det sätts innan menyn ritas, så att ett gammalt
+# värde i webbläsaren aldrig kan skriva över nyss sparade inställningar.
+if st.session_state.get("strategival") != inst.get("strategi", STANDARD_INSTALLNINGAR["strategi"]):
+    st.session_state.strategival = inst.get("strategi", STANDARD_INSTALLNINGAR["strategi"])
 
 
 def byt_strategi():
@@ -96,7 +101,6 @@ with st.sidebar:
     sida = st.radio("Meny", SIDOR, label_visibility="collapsed")
     st.divider()
     st.selectbox("Strategi", STRATEGIVAL, key="strategival",
-                 index=STRATEGIVAL.index(inst.get("strategi", "B")) if inst.get("strategi", "B") in STRATEGIVAL else 1,
                  format_func=lambda k: STRATEGIER[k]["namn"] if k in STRATEGIER else "Egen (justerad)",
                  on_change=byt_strategi)
     aktuell = inst.get("strategi", "B")
@@ -514,13 +518,11 @@ def sida_installningar():
                             if pd.notna(rw["Valuta"]) and str(rw["Valuta"]).strip() and pd.notna(rw["Ränta %"])}
             ny["strategi"] = matchar_strategi(ny)
             if spara_inst(ny):
-                st.session_state.pop("strategival", None)
                 st.success("Sparat.")
                 st.rerun()
     if kod not in STRATEGIER or matchar_strategi(inst) != kod:
         if st.button("Återställ till strategi B (Balanserad)"):
             if spara_inst(tillampa_strategi(inst, "B")):
-                st.session_state.pop("strategival", None)
                 st.rerun()
 
     st.markdown("##### Jämför strategierna")
