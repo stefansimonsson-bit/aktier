@@ -1,5 +1,5 @@
 {
-  "strategi": "A",
+  "strategi": "Egen",
   "rantor": {
     "SEK": 0.033,
     "USD": 0.051
@@ -20,8 +20,8 @@
   "tillv_term": 0.03,
   "w_fcf": 0.0,
   "w_pe": 0.5,
-  "w_dcf": 2.0,
+  "w_dcf": 0.0,
   "rev_grans": -0.15,
   "nd_max": 3.0,
-  "max_vikt": 0.25
+  "max_vikt": 0.0
 }
