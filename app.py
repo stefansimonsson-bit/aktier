@@ -144,6 +144,16 @@ def hamta_all_data(lista):
     return data
 
 
+def ar_text(v):
+    if v is None or pd.isna(v):
+        return "–"
+    if v > 30:
+        return "över 30 år"
+    if v < 0.05:
+        return "0 år (priset kräver mindre än prognosen)"
+    return f"{v:.1f} år".replace(".", ",")
+
+
 def kr(v):
     return "–" if v is None or pd.isna(v) else f"{v:,.0f} kr".replace(",", " ")
 
@@ -208,12 +218,14 @@ def sida_oversikt():
     if aktier.empty:
         st.caption("Inga aktier.")
     else:
+        aktier = aktier.assign(kraver_ar=aktier["implicit_ar"].map(
+            lambda v: None if v is None or pd.isna(v) else (">30" if v > 30 else f"{v:.1f}")))
         t = aktier[["ticker", "namn", "signal", "index", "orsak", "varde_sek", "vikt", "implicit_tillvaxt",
-                    "forvantad_tillvaxt", "g_kalla", "riktkurs_uppsida", "fcf_yield", "pe_nu", "pe_pct",
+                    "forvantad_tillvaxt", "kraver_ar", "g_kalla", "riktkurs_uppsida", "fcf_yield", "pe_nu", "pe_pct",
                     "notering"]].rename(columns={
             "ticker": "Ticker", "namn": "Namn", "signal": "Signal", "index": "Index", "orsak": "Orsak",
             "varde_sek": "Värde (SEK)", "vikt": "Vikt", "implicit_tillvaxt": "Prisets tillväxt",
-            "forvantad_tillvaxt": "Förväntad tillväxt", "g_kalla": "Källa", "riktkurs_uppsida": "Till riktkurs",
+            "forvantad_tillvaxt": "Förväntad tillväxt", "kraver_ar": "Priset kräver (år)", "g_kalla": "Källa", "riktkurs_uppsida": "Till riktkurs",
             "fcf_yield": "FCF-yield", "pe_nu": "P/E", "pe_pct": "P/E-percentil", "notering": "Notering"})
         st.dataframe(t.style.map(signalstil, subset=["Signal"]).map(indexfarg, subset=["Index"])
                      .format({"Index": "{:.0f}", "Värde (SEK)": "{:,.0f}", "Vikt": pct, "Prisets tillväxt": pct,
@@ -223,7 +235,8 @@ def sida_oversikt():
         st.caption("Index: 100 = rimligt värderad, under 100 = undervärderad, över 100 = övervärderad. "
                    "**Prisets tillväxt** är den tillväxt i fritt kassaflöde som dagens kurs förutsätter. "
                    "**Förväntad tillväxt** är analytikernas (eller historisk). Ligger prisets klart över den "
-                   "förväntade är aktien dyr mot förväntningarna.")
+                   "förväntade är aktien dyr mot förväntningarna. **Priset kräver (år)** = hur många år den "
+                   "förväntade tillväxten måste hålla i sig innan den börjar avta.")
 
     # ---------- Fonder och ETF:er
     for kat in ["Fonder", "ETF:er"]:
@@ -289,10 +302,17 @@ def sida_detaljer():
     rader = [
         f"**Tillväxt:** dagens pris förutsätter **{fmt(r['implicit_tillvaxt'], '{:.1%}')}** årlig tillväxt i fritt "
         f"kassaflöde. Förväntat: **{fmt(r['forvantad_tillvaxt'], '{:.1%}')}** ({r['g_kalla'] or 'saknas'}) → {status('DCF')}",
-        f"**DCF-antaganden:** tillväxten hålls i {fmt(r.get('hall_ar'), '{:.0f}')} år och avtar sedan till "
-        f"{inst['tillv_term']:.1%} år {max(int(inst['dcf_ar']), int(r.get('hall_ar') or 0) + 1)}. Avkastningskrav "
-        f"{r['avk_krav']:.1%}. FCF-bas: {FCF_BASER.get(r.get('fcf_bas'), '–')} = "
+        f"**Priset kräver** att den förväntade tillväxten håller i sig i **{ar_text(r.get('implicit_ar'))}** "
+        f"innan den börjar avta",
+        f"**DCF-antaganden:** skillnaden mot långsiktig tillväxt ({inst['tillv_term']:.1%}) halveras på "
+        f"{fmt(r.get('halvering'), '{:g}')} år"
+        + (" (längre eftersom bolaget räknas som kvalitetsbolag)" if r.get("kvalitet") and inst.get("kvalitet_pa") else "")
+        + f". Avkastningskrav {r['avk_krav']:.1%}. FCF-bas: {FCF_BASER.get(r.get('fcf_bas'), '–')} = "
         f"{fmt(r['fcf_mn'], '{:,.0f}')} mn {r['valuta'] or ''}",
+        f"**Kvalitet:** rörelsemarginal "
+        + (" / ".join(f"{m:.0%}" for m in (d.get('marginaler') or [])) or "–")
+        + (" → ✅ kvalitetsbolag" if r.get("kvalitet") else " → inte kvalitetsbolag")
+        + f" (krav: snitt minst {inst['kval_marginal']:.0%} och som lägst 75 % av snittet)",
         f"**FCF-yield** {fmt(r['fcf_yield'], '{:.1%}')} mot ränta {rf:.1%} och rimlig nivå "
         f"{rf + inst['fcf_premie']:.1%} → {status('FCF')}",
         f"**P/E** {fmt(r['pe_nu'], '{:.1f}')} mot median {fmt(r['pe_median'], '{:.1f}')} "
@@ -309,8 +329,7 @@ def sida_detaljer():
     g_delar = [("Analytiker 5 år", d.get("g_analytiker_5ar")), ("Analytiker 1–2 år", d.get("g_analytiker_kort")),
                ("Historisk omsättning", d.get("g_historisk"))]
     st.caption("Tillväxtkällor: " + " · ".join(f"{n} {fmt(v, '{:.1%}')}" for n, v in g_delar)
-               + f". Den första som finns används, begränsad till −5 % – 30 %, och hålls i {int(inst['hall_ar'])} år oavsett källa. "
-               "Egen tillväxt under Innehav går före.")
+               + ". Den första som finns används, begränsad till −5 % – 30 %. Egen tillväxt under Innehav går före.")
     if isinstance(r["notering"], str) and r["notering"]:
         st.caption(f"Notering: {r['notering']}")
 
@@ -506,11 +525,21 @@ def sida_installningar():
         ny["p_lag"] = a.number_input("P/E-percentil för billig", value=int(inst["p_lag"]), min_value=0, max_value=100)
         ny["p_hog"] = b.number_input("P/E-percentil för dyr", value=int(inst["p_hog"]), min_value=0, max_value=100)
         ny["dcf_marginal"] = c.number_input("Säkerhetsmarginal DCF %", value=inst["dcf_marginal"] * 100, step=5.0) / 100
-        ny["hall_ar"] = c.number_input("År med prognostillväxt", value=int(inst["hall_ar"]), min_value=1,
-                                       max_value=15, help="Så många år hålls den förväntade tillväxten innan den "
-                                                          "börjar avta. Gäller oavsett om prognosen är på 1–2 eller 5 år.")
-        ny["dcf_ar"] = a.number_input("År innan tillväxten planat ut", value=int(inst["dcf_ar"]), min_value=2, max_value=20)
-        ny["tillv_term"] = b.number_input("Långsiktig tillväxt därefter %", value=inst["tillv_term"] * 100, step=0.5) / 100
+        ny["halvering_ar"] = c.number_input(
+            "Halveringstid för tillväxt (år)", value=float(inst["halvering_ar"]), min_value=0.5, max_value=15.0,
+            step=0.5, help="Så ofta halveras skillnaden mellan bolagets tillväxt och den långsiktiga nivån. "
+                           "Samma regel för alla bolag. Forskning visar att hög tillväxt sällan består länge.")
+        ny["tillv_term"] = a.number_input("Långsiktig tillväxt %", value=inst["tillv_term"] * 100, step=0.5) / 100
+        ny["kvalitet_pa"] = b.checkbox("Längre halveringstid för kvalitetsbolag", value=bool(inst["kvalitet_pa"]),
+                                       help="Bolag med hög och stabil rörelsemarginal brukar kunna behålla "
+                                            "tillväxten längre.")
+        ny["halvering_kval"] = c.number_input("Halveringstid för kvalitetsbolag (år)",
+                                              value=float(inst["halvering_kval"]), min_value=0.5, max_value=20.0,
+                                              step=0.5)
+        ny["kval_marginal"] = a.number_input("Kvalitetsbolag: minsta rörelsemarginal %",
+                                             value=inst["kval_marginal"] * 100, step=1.0,
+                                             help="Snittet av de senaste årens rörelsemarginal ska vara minst så "
+                                                  "högt, och inget år under 75 % av snittet.") / 100
         ny["rev_grans"] = c.number_input("Spärr: vinstrevidering %", value=inst["rev_grans"] * 100, step=1.0) / 100
         ny["nd_max"] = a.number_input("Spärr: max nettoskuld/EBITDA", value=float(inst["nd_max"]), step=0.5)
         ny["w_fcf"] = b.number_input("Vikt FCF (0 = av)", value=float(inst["w_fcf"]), step=0.5, min_value=0.0)
@@ -535,8 +564,11 @@ def sida_installningar():
                  "erp": ("Aktieriskpremie (vid ränta + premie)", "{:.1%}"),
                  "fcf_bas": ("FCF-bas", FCF_BASER), "fcf_premie": ("FCF-premie", "{:.1%}"),
                  "p_lag": ("P/E-percentil billig", "{:.0f}"), "p_hog": ("P/E-percentil dyr", "{:.0f}"),
-                 "dcf_marginal": ("DCF-marginal", "{:.0%}"), "dcf_ar": ("År innan tillväxten planat ut", "{:.0f}"),
-                 "hall_ar": ("År med prognostillväxt", "{:.0f}"),
+                 "dcf_marginal": ("DCF-marginal", "{:.0%}"),
+                 "halvering_ar": ("Halveringstid för tillväxt (år)", "{:.1f}"),
+                 "kvalitet_pa": ("Längre halveringstid för kvalitetsbolag", {True: "Ja", False: "Nej"}),
+                 "halvering_kval": ("Halveringstid kvalitetsbolag (år)", "{:.1f}"),
+                 "kval_marginal": ("Kvalitet: minsta rörelsemarginal", "{:.0%}"),
                  "tillv_term": ("Långsiktig tillväxt", "{:.1%}"), "w_fcf": ("Vikt FCF", "{:.1f}"),
                  "w_pe": ("Vikt P/E", "{:.1f}"), "w_dcf": ("Vikt DCF", "{:.1f}"),
                  "rev_grans": ("Spärr vinstrevidering", "{:.0%}"), "nd_max": ("Spärr nettoskuld/EBITDA", "{:.1f}"),
@@ -555,8 +587,9 @@ def sida_om():
 1. **DCF – prisets tillväxt mot förväntad tillväxt.** Appen räknar ut vilken årlig tillväxt i fritt kassaflöde
    som dagens kurs förutsätter, och jämför den med analytikernas förväntade tillväxt – i första hand
    femårsprognosen, annars prognosen för i år och nästa år, och sist bolagets historiska omsättningstillväxt.
-   Tillväxten hålls i {int(inst['hall_ar'])} år oavsett källa och avtar sedan jämnt till
-   {inst['tillv_term']:.1%} år {max(int(inst['dcf_ar']), int(inst['hall_ar']) + 1)}.
+   Samma regel gäller alla bolag: skillnaden mellan bolagets tillväxt och den långsiktiga nivån
+   ({inst['tillv_term']:.1%}) halveras på {inst['halvering_ar']:g} år. Det speglar forskning som visar att hög
+   tillväxt sällan består länge, och gör att hög förväntad tillväxt kräver mer för att ge en hög värdering.{(" Kvalitetsbolag – rörelsemarginal i snitt minst " + format(inst['kval_marginal'], '.0%') + " och som lägst 75 % av snittet – får halveringstid " + format(inst['halvering_kval'], 'g') + " år.") if inst.get('kvalitet_pa') else ""}
    Avkastningskrav: {('fast ' + format(inst['avk_krav_fast'], '.1%')) if inst.get('krav_metod', 'fast') == 'fast' else ('ränta + ' + format(inst['erp'], '.1%'))}.
    FCF-bas: {FCF_BASER.get(inst.get('fcf_bas'), '')}.
    Billigt om priset ligger minst {inst['dcf_marginal']:.0%} under värdet med den förväntade tillväxten.

@@ -299,6 +299,15 @@ def hamta(symbol, typ=None, hist_ar=5, dra_sbc=True):
     elif pe["pe_median"] is None:
         noter.append("För kort P/E-historik")
 
+    # Rörelsemarginal per år (för kvalitetsbedömningen)
+    marginaler = []
+    rorelse = _rad(inc, ["Operating Income", "EBIT", "Total Operating Income As Reported"])
+    oms_m = _rad(inc, ["Total Revenue", "Operating Revenue"])
+    if rorelse is not None and oms_m is not None:
+        for d in rorelse.index:
+            if d in oms_m.index and oms_m.loc[d] > 0:
+                marginaler.append(float(rorelse.loc[d] / oms_m.loc[d]))
+
     # Förväntad tillväxt: analytikernas konsensus, med historisk omsättningstillväxt som reserv
     tillv = _forvantad_tillvaxt(t, inc)
 
@@ -339,6 +348,7 @@ def hamta(symbol, typ=None, hist_ar=5, dra_sbc=True):
         "g_ref": tillv["g_ref"], "g_kalla": tillv["kalla"],
         "g_analytiker_5ar": tillv["g_5ar"], "g_analytiker_kort": tillv["g_kort"], "g_historisk": tillv["g_hist"],
         "riktkurs_uppsida": riktkurs_uppsida, "antal_analytiker": antal_analytiker,
+        "marginaler": marginaler,
         "notering": "; ".join(noter),
     })
     return ut
