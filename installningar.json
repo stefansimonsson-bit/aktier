@@ -21,7 +21,7 @@
   "kvalitet_pa": true,
   "halvering_kval": 6.0,
   "kval_marginal": 0.2,
-  "w_fcf": 1.0,
+  "w_fcf": 0.0,
   "w_pe": 1.0,
   "w_dcf": 1.0,
   "rev_grans": -0.15,
