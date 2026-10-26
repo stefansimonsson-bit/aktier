@@ -1,0 +1,4 @@
+ticker,typ,antal,tillvaxt_pct,malvikt_pct,manuell_kurs_sek
+MSFT,Aktie,10,10.0,,
+VWCE.DE,ETF,20,,30.0,
+AVGO,Aktie,282,10.0,,
