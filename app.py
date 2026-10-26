@@ -309,7 +309,8 @@ def sida_detaljer():
     g_delar = [("Analytiker 5 år", d.get("g_analytiker_5ar")), ("Analytiker 1–2 år", d.get("g_analytiker_kort")),
                ("Historisk omsättning", d.get("g_historisk"))]
     st.caption("Tillväxtkällor: " + " · ".join(f"{n} {fmt(v, '{:.1%}')}" for n, v in g_delar)
-               + ". Den första som finns används, begränsad till −5 % – 30 %. Egen tillväxt under Innehav går före.")
+               + f". Den första som finns används, begränsad till −5 % – 30 %, och hålls i {int(inst['hall_ar'])} år oavsett källa. "
+               "Egen tillväxt under Innehav går före.")
     if isinstance(r["notering"], str) and r["notering"]:
         st.caption(f"Notering: {r['notering']}")
 
@@ -505,6 +506,9 @@ def sida_installningar():
         ny["p_lag"] = a.number_input("P/E-percentil för billig", value=int(inst["p_lag"]), min_value=0, max_value=100)
         ny["p_hog"] = b.number_input("P/E-percentil för dyr", value=int(inst["p_hog"]), min_value=0, max_value=100)
         ny["dcf_marginal"] = c.number_input("Säkerhetsmarginal DCF %", value=inst["dcf_marginal"] * 100, step=5.0) / 100
+        ny["hall_ar"] = c.number_input("År med prognostillväxt", value=int(inst["hall_ar"]), min_value=1,
+                                       max_value=15, help="Så många år hålls den förväntade tillväxten innan den "
+                                                          "börjar avta. Gäller oavsett om prognosen är på 1–2 eller 5 år.")
         ny["dcf_ar"] = a.number_input("År innan tillväxten planat ut", value=int(inst["dcf_ar"]), min_value=2, max_value=20)
         ny["tillv_term"] = b.number_input("Långsiktig tillväxt därefter %", value=inst["tillv_term"] * 100, step=0.5) / 100
         ny["rev_grans"] = c.number_input("Spärr: vinstrevidering %", value=inst["rev_grans"] * 100, step=1.0) / 100
@@ -532,6 +536,7 @@ def sida_installningar():
                  "fcf_bas": ("FCF-bas", FCF_BASER), "fcf_premie": ("FCF-premie", "{:.1%}"),
                  "p_lag": ("P/E-percentil billig", "{:.0f}"), "p_hog": ("P/E-percentil dyr", "{:.0f}"),
                  "dcf_marginal": ("DCF-marginal", "{:.0%}"), "dcf_ar": ("År innan tillväxten planat ut", "{:.0f}"),
+                 "hall_ar": ("År med prognostillväxt", "{:.0f}"),
                  "tillv_term": ("Långsiktig tillväxt", "{:.1%}"), "w_fcf": ("Vikt FCF", "{:.1f}"),
                  "w_pe": ("Vikt P/E", "{:.1f}"), "w_dcf": ("Vikt DCF", "{:.1f}"),
                  "rev_grans": ("Spärr vinstrevidering", "{:.0%}"), "nd_max": ("Spärr nettoskuld/EBITDA", "{:.1f}"),
@@ -550,8 +555,8 @@ def sida_om():
 1. **DCF – prisets tillväxt mot förväntad tillväxt.** Appen räknar ut vilken årlig tillväxt i fritt kassaflöde
    som dagens kurs förutsätter, och jämför den med analytikernas förväntade tillväxt – i första hand
    femårsprognosen, annars prognosen för i år och nästa år, och sist bolagets historiska omsättningstillväxt.
-   Tillväxten hålls lika länge som prognosen gäller (5 år för femårsprognosen, 2 år för kortare prognoser,
-   3 år för historik) och avtar sedan jämnt till {inst['tillv_term']:.1%} år {int(inst['dcf_ar'])}.
+   Tillväxten hålls i {int(inst['hall_ar'])} år oavsett källa och avtar sedan jämnt till
+   {inst['tillv_term']:.1%} år {max(int(inst['dcf_ar']), int(inst['hall_ar']) + 1)}.
    Avkastningskrav: {('fast ' + format(inst['avk_krav_fast'], '.1%')) if inst.get('krav_metod', 'fast') == 'fast' else ('ränta + ' + format(inst['erp'], '.1%'))}.
    FCF-bas: {FCF_BASER.get(inst.get('fcf_bas'), '')}.
    Billigt om priset ligger minst {inst['dcf_marginal']:.0%} under värdet med den förväntade tillväxten.

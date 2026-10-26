@@ -4,11 +4,10 @@
 # ---------------------------------------------------------------- strategier
 STRATEGI_NYCKLAR = ["krav_metod", "avk_krav_fast", "erp", "fcf_bas", "fcf_premie", "p_lag", "p_hog",
                     "dcf_marginal", "dcf_ar", "tillv_term", "w_fcf", "w_pe", "w_dcf", "rev_grans", "nd_max",
-                    "max_vikt"]
+                    "max_vikt", "hall_ar"]
 FCF_BASER = {"senaste": "Senaste året", "snitt3": "Snitt 3 år", "norm_capex": "Normaliserad capex"}
 KRAV_METODER = {"fast": "Fast avkastningskrav", "premie": "Ränta + riskpremie"}
-# Hur många år prognosen hålls innan tillväxten börjar avta, beroende på källa
-HALL_AR = {"Analytiker, 5 år": 5, "Analytiker, 1–2 år": 2, "Historisk omsättning": 3, "Egen": 5}
+
 
 STRATEGIER = {
     "A": {
@@ -20,7 +19,7 @@ STRATEGIER = {
                         "signaler. Passar en portfölj med kvalitetsbolag som Magnificent 7."),
         "param": {"krav_metod": "fast", "avk_krav_fast": 0.08, "erp": 0.04, "fcf_bas": "senaste", "fcf_premie": 0.02, "p_lag": 10, "p_hog": 90, "dcf_marginal": 0.30,
                   "dcf_ar": 10, "tillv_term": 0.03, "w_fcf": 0.0, "w_pe": 0.5, "w_dcf": 2.0,
-                  "rev_grans": -0.15, "nd_max": 3.0, "max_vikt": 0.25},
+                  "rev_grans": -0.15, "nd_max": 3.0, "max_vikt": 0.25, "hall_ar": 5},
     },
     "B": {
         "namn": "B. Balanserad",
@@ -29,7 +28,7 @@ STRATEGIER = {
                         "Måttligt med signaler. Ett rimligt standardval."),
         "param": {"krav_metod": "fast", "avk_krav_fast": 0.085, "erp": 0.045, "fcf_bas": "senaste", "fcf_premie": 0.03, "p_lag": 20, "p_hog": 80, "dcf_marginal": 0.20,
                   "dcf_ar": 10, "tillv_term": 0.025, "w_fcf": 0.5, "w_pe": 1.0, "w_dcf": 1.5,
-                  "rev_grans": -0.10, "nd_max": 3.0, "max_vikt": 0.15},
+                  "rev_grans": -0.10, "nd_max": 3.0, "max_vikt": 0.15, "hall_ar": 5},
     },
     "C": {
         "namn": "C. Värdedisciplin",
@@ -39,7 +38,7 @@ STRATEGIER = {
                         "förtjänar en högre värdering än förr."),
         "param": {"krav_metod": "fast", "avk_krav_fast": 0.09, "erp": 0.05, "fcf_bas": "snitt3", "fcf_premie": 0.035,
                   "p_lag": 25, "p_hog": 75, "dcf_marginal": 0.15, "dcf_ar": 8, "tillv_term": 0.025, "w_fcf": 1.0, "w_pe": 1.5, "w_dcf": 1.0,
-                  "rev_grans": -0.10, "nd_max": 2.5, "max_vikt": 0.15},
+                  "rev_grans": -0.10, "nd_max": 2.5, "max_vikt": 0.15, "hall_ar": 4},
     },
     "D": {
         "namn": "D. Försiktig",
@@ -48,7 +47,7 @@ STRATEGIER = {
                         "köper sällan. Passar om du främst vill minska risken i en koncentrerad portfölj."),
         "param": {"krav_metod": "fast", "avk_krav_fast": 0.095, "erp": 0.055, "fcf_bas": "snitt3", "fcf_premie": 0.04, "p_lag": 20, "p_hog": 70, "dcf_marginal": 0.25,
                   "dcf_ar": 7, "tillv_term": 0.02, "w_fcf": 1.0, "w_pe": 1.0, "w_dcf": 1.0,
-                  "rev_grans": -0.05, "nd_max": 2.0, "max_vikt": 0.10},
+                  "rev_grans": -0.05, "nd_max": 2.0, "max_vikt": 0.10, "hall_ar": 3},
     },
 }
 STANDARD_STRATEGI = "B"
@@ -177,7 +176,7 @@ def vardera(innehav, data, inst):
     if fcf is None:  # reserv om vald bas saknas
         fcf = data.get("fcf_senaste_mn") if data.get("fcf_senaste_mn") is not None else data.get("fcf_mn")
     res["fcf_mn"], res["fcf_bas"] = fcf, bas
-    hall = HALL_AR.get(g_kalla, 3)
+    hall = int(inst.get("hall_ar", 5))  # samma oavsett källa till prognosen
     res["hall_ar"] = hall
     pe_nu, pe_med, pe_pct = data.get("pe_nu"), data.get("pe_median"), data.get("pe_pct")
 
