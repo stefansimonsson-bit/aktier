@@ -1,5 +1,5 @@
 {
-  "strategi": "Egen",
+  "strategi": "A",
   "rantor": {
     "SEK": 0.033,
     "USD": 0.051
@@ -11,18 +11,20 @@
   "krav_metod": "fast",
   "avk_krav_fast": 0.08,
   "erp": 0.04,
-  "fcf_bas": "norm_capex",
+  "fcf_bas": "senaste",
   "fcf_premie": 0.02,
   "p_lag": 10,
   "p_hog": 90,
   "dcf_marginal": 0.3,
-  "dcf_ar": 10,
-  "tillv_term": 0.05,
+  "tillv_term": 0.03,
+  "halvering_ar": 4,
+  "kvalitet_pa": true,
+  "halvering_kval": 6,
+  "kval_marginal": 0.2,
   "w_fcf": 0.0,
-  "w_pe": 1.0,
-  "w_dcf": 1.0,
+  "w_pe": 0.5,
+  "w_dcf": 2.0,
   "rev_grans": -0.15,
   "nd_max": 3.0,
-  "max_vikt": 0.0,
-  "hall_ar": 5
+  "max_vikt": 0.25
 }
