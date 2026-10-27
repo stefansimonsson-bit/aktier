@@ -484,10 +484,23 @@ def hamta(ticker, nyckel, typ_hint=None, pe_ar=10):
         andel = max(0.0, min(1.0, (fy_slut - vid).days / 365))
         return andel * e0 + (1 - andel) * e1
 
-    bas_eps = eps0 / (1 + g0) if eps0 and g0 is not None and g0 > -0.9 else None
+    # Fjolårets utfall per aktie – basen för tillväxten. Flera reserver eftersom fälten varierar.
+    bas_eps, bas_kalla = None, None
+    if eps0 and g0 is not None and g0 > -0.9:
+        bas_eps, bas_kalla = eps0 / (1 + g0), "estimat i år ÷ (1 + tillväxt i år)"
     if bas_eps is None:
         senaste = _poster((f.get("Earnings") or {}).get("Annual"))
-        bas_eps = _tal(senaste[0][1].get("epsActual")) if senaste else None
+        v = _tal(senaste[0][1].get("epsActual")) if senaste else None
+        if v:
+            bas_eps, bas_kalla = v, "senaste årsutfall"
+    if bas_eps is None and ar and aktier_nu:
+        senaste_ar = next((v for d, v in ar if v is not None), None)
+        if senaste_ar:
+            bas_eps, bas_kalla = senaste_ar / aktier_nu / (eps_skala or 1), "årets nettovinst ÷ antal aktier"
+    if bas_eps is None:
+        v = _tal(hl.get("DilutedEpsTTM")) or _tal(hl.get("EarningsShare"))
+        if v:
+            bas_eps, bas_kalla = v, "vinst per aktie senaste 12 mån"
 
     def tvaarstillvaxt(e1):
         if e1 and bas_eps and e1 > 0 and bas_eps > 0:
@@ -502,8 +515,11 @@ def hamta(ticker, nyckel, typ_hint=None, pe_ar=10):
             eps_hist.append((d, v / n))
     g_hist_eps = _cagr(eps_hist, 5)
     g_hist_oms = _cagr(oms_ar, 5)
+    g1 = eps1 / eps0 - 1 if eps0 and eps1 and eps0 > 0 and eps1 > 0 else None
     if g2 is not None:
         g, g_kalla = g2, "Analytiker, 2 år"
+    elif g1 is not None:
+        g, g_kalla = g1, "Analytiker, nästa år"
     elif g5 is not None:
         g, g_kalla = g5, "Analytiker, 5 år"
     elif g_hist_eps is not None:
@@ -514,6 +530,16 @@ def hamta(ticker, nyckel, typ_hint=None, pe_ar=10):
     ntm_nu = ntm(eps0, eps1, idag)
     fwd_pe = kurs / (ntm_nu * eps_skala) if ntm_nu and ntm_nu > 0 else (_tal(val.get("ForwardPE")) or None)
     peg = fwd_pe / (g * 100) if fwd_pe and g and g > 0 else None
+    if peg is not None:
+        peg_saknas = None
+    elif not (eps0 or eps1):
+        peg_saknas = "Inga vinstestimat hos EODHD"
+    elif not fwd_pe:
+        peg_saknas = "Negativ förväntad vinst"
+    elif g is None:
+        peg_saknas = "Tillväxt kunde inte räknas (fjolårets utfall saknas)"
+    else:
+        peg_saknas = f"Förväntad tillväxt {g:.1%} – PEG gäller bara vid positiv tillväxt"
 
     peg_90 = rev = None
     ntm_90 = ntm(eps0_90, eps1_90, idag - dt.timedelta(days=90))
@@ -545,7 +571,8 @@ def hamta(ticker, nyckel, typ_hint=None, pe_ar=10):
         "fy_slut": fy_slut.isoformat() if fy_slut else None,
         "fwd_pe": fwd_pe, "g_forvantad": g, "g_kalla": g_kalla, "g_2ar": g2, "g_5ar": g5,
         "g_hist_eps": g_hist_eps, "g_hist_oms": g_hist_oms,
-        "peg": peg, "peg_90": peg_90, "peg_trend": peg_trend, "peg_eodhd": _tal(hl.get("PEGRatio")),
+        "peg": peg, "peg_saknas": peg_saknas, "g_1ar": g1, "bas_eps": bas_eps, "bas_kalla": bas_kalla,
+        "peg_90": peg_90, "peg_trend": peg_trend, "peg_eodhd": _tal(hl.get("PEGRatio")),
         "rev_90": rev, "rev_upp_30": upp, "rev_ned_30": ned, "antal_analytiker": antal_anal,
         "riktkurs_uppsida": riktkurs / kurs - 1 if riktkurs and kurs else None,
         "rek": {k: _tal(ar_rek.get(k)) for k in ("StrongBuy", "Buy", "Hold", "Sell", "StrongSell")},

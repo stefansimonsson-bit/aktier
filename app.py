@@ -276,9 +276,10 @@ def sida_detaljer():
         f"**P/E framåt** (nästa 12 mån): {fmt(d.get('fwd_pe'), '{:.1f}')} – vinst per aktie "
         f"{fmt(d.get('eps_ntm'), '{:.2f}')} (i år {fmt(d.get('eps0'), '{:.2f}')}, nästa år {fmt(d.get('eps1'), '{:.2f}')})",
         f"**Förväntad vinsttillväxt:** {fmt(d.get('g_forvantad'), '{:.1%}')} per år ({d.get('g_kalla') or 'saknas'}). "
-        f"Analytiker 2 år {fmt(d.get('g_2ar'), '{:.1%}')} · 5 år {fmt(d.get('g_5ar'), '{:.1%}')} · "
+        f"Analytiker 2 år {fmt(d.get('g_2ar'), '{:.1%}')} · nästa år {fmt(d.get('g_1ar'), '{:.1%}')} · 5 år {fmt(d.get('g_5ar'), '{:.1%}')} · "
         f"historisk vinst {fmt(d.get('g_hist_eps'), '{:.1%}')} · historisk omsättning {fmt(d.get('g_hist_oms'), '{:.1%}')}",
-        f"**PEG:** {fmt(d.get('peg'), '{:.2f}')} (för 90 dagar sedan {fmt(d.get('peg_90'), '{:.2f}')}, "
+        f"**Bas för tillväxten:** fjolårets vinst per aktie {fmt(d.get('bas_eps'), '{:.2f}')} ({d.get('bas_kalla') or 'saknas'})",
+        f"**PEG:** {fmt(d.get('peg'), '{:.2f}')}" + (f" – {d['peg_saknas']}" if d.get("peg_saknas") else "") + f" (för 90 dagar sedan {fmt(d.get('peg_90'), '{:.2f}')}, "
         f"förändring {fmt(d.get('peg_trend'), '{:+.0%}')} → {TREND_PIL.get(r['peg_trend_ord'], '–')}). "
         f"Billig ≤ {inst['peg_billig']}, rimlig {inst['peg_rimlig']}, dyr ≥ {inst['peg_dyr']}. "
         f"EODHD:s egen PEG: {fmt(d.get('peg_eodhd'), '{:.2f}')}",
@@ -552,7 +553,8 @@ def sida_test():
                 d = {"ok": False, "notering": str(e)}
             rader.append({"Ticker": h["ticker"], "EODHD": d.get("eodhd_ticker"), "OK": "✅" if d.get("ok") else "❌",
                           "Typ": d.get("typ"), "Valuta": d.get("valuta"), "Kurs": d.get("kurs"),
-                          "PEG": d.get("peg"), "P/E": d.get("pe_nu"), "P/E-historik (år)": d.get("hist_ar"),
+                          "PEG": d.get("peg"), "Varför inget PEG": d.get("peg_saknas"),
+                          "Tillväxt": d.get("g_forvantad"), "Källa": d.get("g_kalla"), "P/E": d.get("pe_nu"), "P/E-historik (år)": d.get("hist_ar"),
                           "Estimat 90 d": d.get("rev_90"), "Notering": d.get("notering")})
         prog.empty()
         st.dataframe(pd.DataFrame(rader), hide_index=True, width="stretch")

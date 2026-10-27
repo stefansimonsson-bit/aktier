@@ -101,7 +101,7 @@ def vardera(innehav, data, inst):
         trend = trendord(data.get("peg_trend"), inst)
         res["peg_trend_ord"] = trend
         if peg is None:
-            res["signal"], res["orsak"] = "För lite data", "PEG kunde inte räknas (estimat eller tillväxt saknas)"
+            res["signal"], res["orsak"] = "För lite data", f"Inget PEG: {data.get('peg_saknas') or 'estimat saknas'}"
             return res
         res["index"] = _klamp(peg / inst["peg_rimlig"] * 100)
         ttxt = f", {trend} PEG" if trend else ""
