@@ -35,14 +35,24 @@ def _datum(s):
         return None
 
 
+def _svarstext(r):
+    try:
+        t = r.text or ""
+    except Exception:
+        t = ""
+    return " ".join(t.split())[:200]
+
+
 def _get(endpoint, nyckel, params=None, timeout=40):
     p = {"api_token": nyckel, "fmt": "json"}
     p.update(params or {})
     r = requests.get(f"{BAS}/{endpoint}", params=p, timeout=timeout)
+    falt = endpoint.split("/")[0]
     if r.status_code in (401, 403):
-        raise EodhdFel("EODHD godkände inte nyckeln, eller så ingår datan inte i abonnemanget.")
+        raise EodhdFel(f"EODHD nekade åtkomst till '{falt}' ({endpoint}, HTTP {r.status_code}): {_svarstext(r)}. "
+                       "Kontrollera nyckeln och abonnemanget på sidan EODHD-test.")
     if r.status_code == 402:
-        raise EodhdFel("Abonnemanget saknar åtkomst till den här datan.")
+        raise EodhdFel(f"Abonnemanget saknar åtkomst till '{falt}' ({endpoint}): {_svarstext(r)}")
     if r.status_code == 429:
         raise EodhdFel("Dagens anropskvot hos EODHD är slut.")
     if r.status_code == 404:
@@ -487,3 +497,40 @@ def diagnos(ticker, nyckel):
         "manadskurser_antal": len(manad),
         "manadskurser_forsta": manad[0][0].isoformat() if manad else None,
     }
+
+
+def testa_nyckel(nyckel):
+    """Provar nyckeln mot de anrop appen använder. Returnerar (kontoinfo, [rader])."""
+    konto = None
+    rader = []
+    idag = dt.date.today()
+    prov = [
+        ("Konto och abonnemang", "user", {}),
+        ("Fundamenta (MSFT.US)", "fundamentals/MSFT.US", {"filter": "General::Name"}),
+        ("Fundamenta (ATCO-B.ST)", "fundamentals/ATCO-B.ST", {"filter": "General::Name"}),
+        ("Dagskurser (MSFT.US)", "eod/MSFT.US", {"from": (idag - dt.timedelta(days=7)).isoformat()}),
+        ("Dagskurser (ATCO-B.ST)", "eod/ATCO-B.ST", {"from": (idag - dt.timedelta(days=7)).isoformat()}),
+        ("Valuta (USDSEK.FOREX)", "eod/USDSEK.FOREX", {"from": (idag - dt.timedelta(days=7)).isoformat()}),
+        ("Sök (ISIN)", "search/US5949181045", {}),
+    ]
+    for namn, endpoint, params in prov:
+        p = {"api_token": nyckel, "fmt": "json"}
+        p.update(params)
+        try:
+            r = requests.get(f"{BAS}/{endpoint}", params=p, timeout=30)
+            status = r.status_code
+            text = _svarstext(r)
+            if namn.startswith("Konto") and status == 200:
+                try:
+                    konto = r.json()
+                except ValueError:
+                    pass
+        except Exception as e:
+            status, text = None, str(e)[:200]
+        rader.append({"Prov": namn, "OK": "✅" if status == 200 else "❌", "HTTP": status,
+                      "Svar": "" if status == 200 else text})
+    if isinstance(konto, dict):
+        konto = {k: konto.get(k) for k in ("name", "subscriptionType", "paymentMethod", "apiRequests",
+                                          "dailyRateLimit", "apiRequestsDate", "inviteToken") if k in konto}
+        konto.pop("inviteToken", None)
+    return konto, rader

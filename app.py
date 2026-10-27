@@ -491,11 +491,24 @@ def sida_installningar():
 def sida_test():
     if kraver_nyckel():
         return
+    st.markdown("##### 1. Testa nyckel och abonnemang")
+    st.caption(f"Nyckeln som används: {len(EODHD_NYCKEL)} tecken, slutar på …{EODHD_NYCKEL[-4:]}"
+               + (" (innehåller mellanslag eller citattecken!)" if any(c in EODHD_NYCKEL for c in ' "\'') else ""))
+    if st.button("Testa nyckeln", type="primary"):
+        with st.spinner("Provar…"):
+            konto, rader = datakalla.testa_nyckel(EODHD_NYCKEL)
+        if konto:
+            st.markdown("**Konto:** " + " · ".join(f"{k}: {v}" for k, v in konto.items()))
+        else:
+            st.warning("Kontouppgifterna gick inte att hämta – nyckeln godkänns troligen inte alls.")
+        st.dataframe(pd.DataFrame(rader), hide_index=True, width="stretch")
+    st.divider()
+    st.markdown("##### 2. Data för en ticker")
     st.write("Visar vad EODHD levererar för en ticker, så att vi kan kontrollera att rätt fält finns.")
     a, b = st.columns([2, 1])
     tk = a.text_input("Ticker", value="MSFT", help="T.ex. MSFT, ATCO-B.ST, PROT.OL eller EODHD-format som MSFT.US")
     typ = b.selectbox("Typ (för beräkningen)", ["(automatiskt)"] + TYPER)
-    if st.button("Hämta", type="primary"):
+    if st.button("Hämta"):
         try:
             with st.spinner("Hämtar…"):
                 diag = datakalla.diagnos(tk, EODHD_NYCKEL)
