@@ -43,6 +43,22 @@ def _svarstext(r):
     return " ".join(t.split())[:200]
 
 
+def _kvartalsdatum(s):
+    """'2024-Q3' -> 2024-09-30, '2024' -> 2024-12-31."""
+    t = str(s or "").strip().upper()
+    try:
+        if "-Q" in t:
+            ar, q = t.split("-Q")
+            manad = int(q) * 3
+            sista = {3: 31, 6: 30, 9: 30, 12: 31}[manad]
+            return dt.date(int(ar), manad, sista)
+        if len(t) == 4 and t.isdigit():
+            return dt.date(int(t), 12, 31)
+    except (ValueError, KeyError):
+        return None
+    return None
+
+
 def _get(endpoint, nyckel, params=None, timeout=40):
     p = {"api_token": nyckel, "fmt": "json"}
     p.update(params or {})
@@ -72,7 +88,11 @@ def _poster(d):
     for k, v in d.items():
         if not isinstance(v, dict):
             continue
-        dd = _datum(v.get("date") or v.get("dateFormatted") or k)
+        dd = None
+        for kandidat in (v.get("dateFormatted"), v.get("date"), v.get("filing_date"), k):
+            dd = _datum(kandidat) or _kvartalsdatum(kandidat)
+            if dd:
+                break
         if dd:
             ut.append((dd, v))
     return sorted(ut, key=lambda x: x[0], reverse=True)
@@ -559,6 +579,10 @@ def diagnos(ticker, nyckel):
         "antal_kvartal": len(_poster(inc.get("quarterly"))),
         "senaste_kvartal": dict(_poster(inc.get("quarterly"))[0][1]) if _poster(inc.get("quarterly")) else None,
         "antal_aktieposter": len(_poster((f.get("outstandingShares") or {}).get("quarterly"))),
+        "antal_aktieposter_balansrakning": sum(1 for _, p in _poster(((f.get("Financials") or {}).get("Balance_Sheet")
+                                                                       or {}).get("quarterly"))
+                                               if _tal(p.get("commonStockSharesOutstanding"))),
+        "aktier_exempel": list(((f.get("outstandingShares") or {}).get("quarterly") or {}).values())[:2],
         "dagskurser": [(d.isoformat(), c, a) for d, c, a in dag[-3:]],
         "manadskurser_antal": len(manad),
         "manadskurser_forsta": manad[0][0].isoformat() if manad else None,

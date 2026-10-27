@@ -522,12 +522,15 @@ def sida_test():
             "Månadskurser 10 år": diag["manadskurser_antal"] >= 100,
             "Kvartalsresultat": diag["antal_kvartal"] >= 8,
             "Årsresultat 10 år": diag["antal_ar"] >= 10,
-            "Antal aktier över tid": diag["antal_aktieposter"] >= 8,
+            "Antal aktier över tid": max(diag["antal_aktieposter"], diag["antal_aktieposter_balansrakning"]) >= 8,
             "Estimat i år / nästa år": bool(diag["trend"].get("0y")) and bool(diag["trend"].get("+1y")),
             "Estimat för 90 dagar sedan": bool((diag["trend"].get("+1y") or {}).get("epsTrend90daysAgo")),
             "Rekommendationer": bool(diag["analyst_ratings"]),
         }
         st.markdown(" · ".join(f"{'✅' if v else '❌'} {k}" for k, v in kontroll.items()))
+        st.caption(f"Antal aktier: {diag['antal_aktieposter']} kvartal i outstandingShares, "
+                   f"{diag['antal_aktieposter_balansrakning']} i balansräkningen. "
+                   f"P/E-historiken beräknas med: {res.get('pe_metod') or '–'}.")
         st.markdown("**Beräknat för ramverket**")
         st.json({k: v for k, v in res.items() if k not in ("pe_serie",)}, expanded=True)
         with st.expander("Rådata från EODHD"):
