@@ -36,6 +36,8 @@ def typa(df):
         df[k] = df[k].astype(object).where(df[k].notna(), None)
         df[k] = df[k].map(lambda v: None if v is None or str(v).strip() in ("", "nan", "None", "<NA>")
                           else str(v).strip()).astype("string")
+    # Äldre versioner använde typen "Aktie" – den betyder nu "avgör automatiskt"
+    df["typ"] = df["typ"].map(lambda v: None if v is None or pd.isna(v) or v == "Aktie" else v).astype("string")
     for k in TAL:
         df[k] = pd.to_numeric(df[k], errors="coerce").astype(float)
     return df.reset_index(drop=True)
