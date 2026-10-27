@@ -134,15 +134,69 @@ def sok(fraga, nyckel, isin=None, typ=None):
 
 
 # ---------------------------------------------------------------- kurser och valuta
-def kurser(ticker, nyckel, fran, period="d"):
-    """[(datum, close, adjusted_close)] äldst först."""
-    data = _get(f"eod/{ticker}", nyckel, {"from": fran.isoformat(), "period": period}) or []
+EODHD_TILL_YAHOO = {"US": "", "XETRA": ".DE", "LSE": ".L", "AU": ".AX", "TSE": ".T"}
+_eod_nekad = {"v": False}   # sätts när abonnemanget saknar kurser hos EODHD
+
+
+def yahoo_ticker(eodhd_tk):
+    bas, _, bors = eodhd_tk.rpartition(".")
+    if bors in ("EUFUND", "FOREX"):
+        return None
+    if bors in EODHD_TILL_YAHOO:
+        return bas + EODHD_TILL_YAHOO[bors]
+    return f"{bas}.{bors}"
+
+
+def _yahoo_kurser(eodhd_tk, fran, period):
+    """Reserv när EODHD-planen saknar kurser. Yahoos 'Close' är splitjusterad."""
+    yt = yahoo_ticker(eodhd_tk)
+    if not yt:
+        return []
+    try:
+        import yfinance as yf
+        h = yf.Ticker(yt).history(start=fran.isoformat(), interval="1mo" if period == "m" else "1d",
+                                  auto_adjust=False)
+    except Exception:
+        return []
+    if h is None or h.empty or "Close" not in h:
+        return []
     ut = []
-    for r in data if isinstance(data, list) else []:
-        d, c = _datum(r.get("date")), _tal(r.get("close"))
-        if d and c:
-            ut.append((d, c, _tal(r.get("adjusted_close")) or c))
+    for idx, rad in h.iterrows():
+        c, a = _tal(rad.get("Close")), _tal(rad.get("Adj Close"))
+        if c:
+            ut.append((idx.date(), c, a or c))
+    if period != "m":
+        try:  # dagens senaste kurs (fördröjd ~15 min)
+            sista = _tal(yf.Ticker(yt).fast_info["last_price"])
+            if sista and ut and ut[-1][0] < dt.date.today():
+                ut.append((dt.date.today(), sista, sista))
+            elif sista and ut:
+                ut[-1] = (ut[-1][0], sista, sista)
+        except Exception:
+            pass
     return sorted(ut)
+
+
+def kurskalla():
+    return "Yahoo" if _eod_nekad["v"] else "EODHD"
+
+
+def kurser(ticker, nyckel, fran, period="d"):
+    """[(datum, close, adjusted_close)] äldst först. EODHD i första hand, Yahoo om planen saknar kurser."""
+    if not _eod_nekad["v"]:
+        try:
+            data = _get(f"eod/{ticker}", nyckel, {"from": fran.isoformat(), "period": period}) or []
+            ut = []
+            for r in data if isinstance(data, list) else []:
+                d, c = _datum(r.get("date")), _tal(r.get("close"))
+                if d and c:
+                    ut.append((d, c, _tal(r.get("adjusted_close")) or c))
+            return sorted(ut)
+        except EodhdFel:
+            _eod_nekad["v"] = True
+    if ticker.endswith(".FOREX"):
+        return []
+    return _yahoo_kurser(ticker, fran, period)
 
 
 def _normalisera_valuta(valuta):
@@ -169,6 +223,8 @@ def valutakurs(fran, till, nyckel):
     kurs = None
     fran_dag = dt.date.today() - dt.timedelta(days=14)
     for par, omvand in ((f"{fran}{till}.FOREX", False), (f"{till}{fran}.FOREX", True)):
+        if _eod_nekad["v"]:
+            break
         try:
             k = kurser(par, nyckel, fran_dag)
         except Exception:
@@ -180,6 +236,12 @@ def valutakurs(fran, till, nyckel):
         try:  # reserv: ECB-kurser via frankfurter.app (gratis, ingen nyckel)
             r = requests.get("https://api.frankfurter.app/latest", params={"from": fran, "to": till}, timeout=20)
             kurs = _tal(r.json().get("rates", {}).get(till)) if r.ok else None
+        except Exception:
+            kurs = None
+    if not kurs:
+        try:  # sista reserv: Yahoo, t.ex. USDSEK=X
+            import yfinance as yf
+            kurs = _tal(yf.Ticker(f"{fran}{till}=X").fast_info["last_price"])
         except Exception:
             kurs = None
     if kurs:
@@ -303,8 +365,9 @@ def hamta(ticker, nyckel, typ_hint=None, pe_ar=10):
     if kurs is None and typ == "Fond":
         kurs = _tal(((f or {}).get("MutualFund_Data") or {}).get("Nav"))
     if kurs is None:
-        return {"ok": False, "eodhd_ticker": tk, "hamtad": hamtad, "typ": typ,
-                "namn": gen.get("Name"), "notering": f"Ingen kurs från EODHD för {tk}."}
+        return {"ok": False, "eodhd_ticker": tk, "hamtad": hamtad, "typ": typ, "namn": gen.get("Name"),
+                "notering": f"Ingen kurs för {tk} ({kurskalla()}"
+                            + (f", Yahoo-ticker {yahoo_ticker(tk)}" if _eod_nekad['v'] else "") + "). Fyll i manuell kurs."}
     kurs_90 = next((c for d, c, _ in reversed(dag) if d <= idag - dt.timedelta(days=90)), None)
 
     valuta, faktor = _normalisera_valuta(gen.get("CurrencyCode") or "")
@@ -315,7 +378,10 @@ def hamta(ticker, nyckel, typ_hint=None, pe_ar=10):
     if valuta and fx_sek is None:
         noter.append(f"Växelkurs {valuta}/SEK saknas – värde räknas inte ut")
 
+    if _eod_nekad["v"]:
+        noter.append("Kurs från Yahoo")
     ut = {"ok": True, "eodhd_ticker": tk, "hamtad": hamtad, "typ": typ, "namn": gen.get("Name") or tk,
+          "kurskalla": kurskalla(),
           "valuta": valuta, "kurs": kurs, "kurs_sek": kurs * fx_sek if fx_sek else None,
           "sektor": gen.get("Sector"), "bransch": gen.get("Industry")}
     if typ in ("ETF", "Fond"):
@@ -529,6 +595,16 @@ def testa_nyckel(nyckel):
             status, text = None, str(e)[:200]
         rader.append({"Prov": namn, "OK": "✅" if status == 200 else "❌", "HTTP": status,
                       "Svar": "" if status == 200 else text})
+    k = _yahoo_kurser("MSFT.US", idag - dt.timedelta(days=7), "d")
+    rader.append({"Prov": "Reserv: kurser från Yahoo (MSFT)", "OK": "✅" if k else "❌", "HTTP": None,
+                  "Svar": f"senaste {k[-1][1]:.2f} USD" if k else "inget svar"})
+    try:
+        r = requests.get("https://api.frankfurter.app/latest", params={"from": "USD", "to": "SEK"}, timeout=20)
+        v = _tal(r.json().get("rates", {}).get("SEK")) if r.ok else None
+    except Exception:
+        v = None
+    rader.append({"Prov": "Reserv: valuta från ECB (USD/SEK)", "OK": "✅" if v else "❌", "HTTP": None,
+                  "Svar": f"{v:.4f}" if v else "inget svar"})
     if isinstance(konto, dict):
         konto = {k: konto.get(k) for k in ("name", "subscriptionType", "paymentMethod", "apiRequests",
                                           "dailyRateLimit", "apiRequestsDate", "inviteToken") if k in konto}
